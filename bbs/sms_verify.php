@@ -10,7 +10,7 @@ include_once('./_common.php');
 
 // AJAX 요청만 허용
 if(!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) != 'xmlhttprequest') {
-    die('잘못된 접근입니다.');
+    die(json_encode(array('success' => false, 'message' => '잘못된 접근입니다.')));
 }
 
 // JSON 헤더 설정

@@ -11,7 +11,7 @@ include_once(G5_CAPTCHA_PATH.'/captcha.lib.php');
 
 // AJAX 요청만 허용
 if(!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) != 'xmlhttprequest') {
-    die('잘못된 접근입니다.');
+    die(json_encode(array('success' => false, 'message' => '잘못된 접근입니다.')));
 }
 
 // JSON 헤더 설정
@@ -85,9 +85,8 @@ if(!$limit_check['allowed']) {
 
 // 회원가입 시 이미 가입된 번호 체크
 if($type == 'register') {
-    $sql = "SELECT COUNT(*) as cnt FROM {$g5['member_table']} 
-            WHERE mb_hp = '".sql_real_escape_string($phone)."' 
-            AND mb_hp != ''";
+    $sql = " select count(*) as cnt from {$g5['member_table']} 
+            where mb_hp = '".sql_real_escape_string($phone)."' ";
     $row = sql_fetch($sql);
     
     if($row['cnt'] > 0) {
@@ -100,9 +99,9 @@ if($type == 'register') {
 if($type == 'password') {
     $mb_id = isset($_POST['mb_id']) ? clean_xss_tags($_POST['mb_id']) : '';
     
-    $sql = "SELECT mb_id FROM {$g5['member_table']} 
-            WHERE mb_id = '".sql_real_escape_string($mb_id)."' 
-            AND mb_hp = '".sql_real_escape_string($phone)."'";
+    $sql = " select mb_id from {$g5['member_table']} 
+            where mb_id = '".sql_real_escape_string($mb_id)."' 
+              and mb_hp = '".sql_real_escape_string($phone)."' ";
     $mb = sql_fetch($sql);
     
     if(!$mb) {

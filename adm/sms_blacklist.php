@@ -6,18 +6,21 @@
  * 작성일: 2024-12-28
  */
 
-$sub_menu = "900300";
+$sub_menu = "900940";
 include_once('./_common.php');
 
-auth_check($auth[$sub_menu], 'r');
+if ($is_admin != 'super')
+    alert('최고관리자만 접근 가능합니다.');
+
+// 테이블명 정의
+$g5['sms_blacklist_table'] = G5_TABLE_PREFIX.'sms_blacklist';
 
 // ===================================
 // DB 테이블 존재 확인
 // ===================================
-$sql = "SHOW TABLES LIKE 'g5_sms_blacklist'";
+$sql = " SHOW TABLES LIKE '{$g5['sms_blacklist_table']}' ";
 $result = sql_query($sql, false);
 if(!sql_num_rows($result)) {
-    // 테이블이 없으면 설치 페이지로 이동
     alert('SMS 인증 시스템이 설치되지 않았습니다.\\n\\n설치 페이지로 이동합니다.', './sms_install.php');
 }
 
@@ -26,24 +29,21 @@ include_once('./admin.head.php');
 
 // 차단번호 추가
 if($w == 'u' && $sb_phone) {
-    auth_check($auth[$sub_menu], 'w');
+    check_admin_token();
     
     $phone = preg_replace('/[^0-9]/', '', $sb_phone);
     $reason = clean_xss_tags($sb_reason);
     
     if(validate_phone_number($phone)) {
         // 중복 체크
-        $sql = "SELECT COUNT(*) as cnt FROM g5_sms_blacklist WHERE sb_phone = '".sql_real_escape_string($phone)."'";
+        $sql = " select count(*) as cnt from {$g5['sms_blacklist_table']} where sb_phone = '".sql_real_escape_string($phone)."' ";
         $row = sql_fetch($sql);
         
         if($row['cnt'] == 0) {
-            $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
-            $current_time = $now->format('Y-m-d H:i:s');
-            
-            $sql = "INSERT INTO g5_sms_blacklist SET
+            $sql = " insert into {$g5['sms_blacklist_table']} set
                     sb_phone = '".sql_real_escape_string($phone)."',
                     sb_reason = '".sql_real_escape_string($reason)."',
-                    sb_datetime = '".sql_real_escape_string($current_time)."'";
+                    sb_datetime = '".G5_TIME_YMDHIS."' ";
             sql_query($sql);
             
             alert('차단번호가 추가되었습니다.', './sms_blacklist.php');
@@ -57,9 +57,9 @@ if($w == 'u' && $sb_phone) {
 
 // 차단번호 삭제
 if($w == 'd' && $sb_id) {
-    auth_check($auth[$sub_menu], 'd');
+    check_admin_token();
     
-    $sql = "DELETE FROM g5_sms_blacklist WHERE sb_id = '".sql_real_escape_string($sb_id)."'";
+    $sql = " delete from {$g5['sms_blacklist_table']} where sb_id = '".sql_real_escape_string($sb_id)."' ";
     sql_query($sql);
     
     goto_url('./sms_blacklist.php?'.$qstr);
@@ -67,13 +67,13 @@ if($w == 'd' && $sb_id) {
 
 // 선택 삭제
 if($act_button == '선택삭제') {
-    auth_check($auth[$sub_menu], 'd');
+    check_admin_token();
     
     for($i=0; $i<count($chk); $i++) {
         $k = $chk[$i];
         $sb_id = $sb_id_array[$k];
         
-        $sql = "DELETE FROM g5_sms_blacklist WHERE sb_id = '".sql_real_escape_string($sb_id)."'";
+        $sql = " delete from {$g5['sms_blacklist_table']} where sb_id = '".sql_real_escape_string($sb_id)."' ";
         sql_query($sql);
     }
     
@@ -83,42 +83,49 @@ if($act_button == '선택삭제') {
 // 검색 조건
 $sql_search = "";
 
-if($stx) {
-    $sql_search .= " and (sb_phone like '%".sql_real_escape_string($stx)."%' or sb_reason like '%".sql_real_escape_string($stx)."%') ";
+$search_sql = "";
+if ($stx) {
+    $search_sql = " (sb_phone like '%$stx%' or sb_reason like '%$stx%') ";
 }
 
-$sql_common = " from g5_sms_blacklist ";
-$sql_where = " where 1=1 $sql_search ";
+if ($search_sql) {
+    $sql_search = " where $search_sql ";
+}
 
-// 전체 카운트
-$sql = " select count(*) as cnt $sql_common $sql_where ";
+$sql = " select count(*) as cnt
+         from {$g5['sms_blacklist_table']}
+         $sql_search ";
 $row = sql_fetch($sql);
 $total_count = $row['cnt'];
 
 $rows = $config['cf_page_rows'];
-$total_page  = ceil($total_count / $rows);
-if ($page < 1) $page = 1;
-$from_record = ($page - 1) * $rows;
-
-// 목록 조회
-$sql = " select * $sql_common $sql_where order by sb_id desc limit $from_record, $rows ";
-$result = sql_query($sql);
+$total_page  = ceil($total_count / $rows);  // 전체 페이지 계산
+if ($page < 1) $page = 1; // 페이지가 없으면 첫 페이지 (1 페이지)
+$from_record = ($page - 1) * $rows; // 시작 열을 구함
 
 $listall = '<a href="'.$_SERVER['SCRIPT_NAME'].'" class="ov_listall">전체목록</a>';
+
+$sql = " select *
+         from {$g5['sms_blacklist_table']}
+         $sql_search
+         order by sb_id desc
+         limit $from_record, $rows ";
+$result = sql_query($sql);
+
+$colspan = 6;
+
+$admin_token = get_admin_token();
 ?>
 
 <div class="local_ov01 local_ov">
-    <?php echo $listall; ?>
-    <span class="btn_ov01">
-        <span class="ov_txt">전체 차단번호</span>
-        <span class="ov_num"><?php echo number_format($total_count); ?>건</span>
-    </span>
+    <?php echo $listall ?>
+    <span class="btn_ov01"><span class="ov_txt">전체 차단번호</span><span class="ov_num"> <?php echo number_format($total_count) ?>건</span></span>
 </div>
 
 <form id="fsearch" name="fsearch" class="local_sch01 local_sch" method="get">
-<label for="stx" class="sound_only">검색어</label>
-<input type="text" name="stx" value="<?php echo $stx; ?>" id="stx" class="frm_input" placeholder="전화번호, 차단사유">
-<input type="submit" value="검색" class="btn_submit">
+<label for="stx" class="sound_only">검색어<strong class="sound_only"> 필수</strong></label>
+<input type="text" name="stx" value="<?php echo $stx ?>" id="stx" class="frm_input" placeholder="전화번호, 차단사유">
+<input type="submit" class="btn_submit" value="검색">
 </form>
 
 <div class="local_desc01 local_desc">
@@ -131,7 +138,7 @@ $listall = '<a href="'.$_SERVER['SCRIPT_NAME'].'" class="ov_listall">전체목�
 <form name="fblacklist" id="fblacklist" action="./sms_blacklist.php" method="post">
 <input type="hidden" name="page" value="<?php echo $page; ?>">
 <input type="hidden" name="stx" value="<?php echo $stx; ?>">
-<input type="hidden" name="act_button" value="">
+<input type="hidden" name="token" value="<?php echo $admin_token ?>">
 
 <div class="tbl_head01 tbl_wrap">
     <table>
@@ -166,15 +173,14 @@ $listall = '<a href="'.$_SERVER['SCRIPT_NAME'].'" class="ov_listall">전체목�
         <td class="td_left"><?php echo get_text($row['sb_reason']); ?></td>
         <td class="td_datetime"><?php echo $row['sb_datetime']; ?></td>
         <td class="td_mng">
-            <a href="<?php echo $_SERVER['SCRIPT_NAME']; ?>?w=d&amp;sb_id=<?php echo $row['sb_id']; ?>&amp;<?php echo $qstr; ?>" onclick="return confirm('정말 삭제하시겠습니까?');" class="btn btn_02">삭제</a>
+            <a href="<?php echo $_SERVER['SCRIPT_NAME']; ?>?w=d&amp;sb_id=<?php echo $row['sb_id']; ?>&amp;<?php echo $qstr; ?>&amp;token=<?php echo $admin_token ?>" onclick="return confirm('정말 삭제하시겠습니까?');" class="btn btn_03">삭제</a>
         </td>
     </tr>
     <?php
     }
     
-    if ($i == 0) {
-        echo '<tr><td colspan="6" class="empty_table">차단된 번호가 없습니다.</td></tr>';
-    }
+    if ($i == 0)
+        echo '<tr><td colspan="'.$colspan.'" class="empty_table">차단된 번호가 없습니다.</td></tr>';
     ?>
     </tbody>
     </table>
@@ -186,13 +192,14 @@ $listall = '<a href="'.$_SERVER['SCRIPT_NAME'].'" class="ov_listall">전체목�
 
 </form>
 
-<?php echo get_paging(G5_IS_MOBILE ? $config['cf_mobile_pages'] : $config['cf_write_pages'], $page, $total_page, $_SERVER['SCRIPT_NAME'].'?'.$qstr.'&amp;page='); ?>
+<?php echo get_paging(G5_IS_MOBILE ? $config['cf_mobile_pages'] : $config['cf_write_pages'], $page, $total_page, '?'.$qstr.'&amp;page='); ?>
 
-<section id="anc_sms_blacklist_add">
+<section>
     <h2 class="h2_frm">차단번호 추가</h2>
     
     <form name="fblacklistadd" action="./sms_blacklist.php" method="post" onsubmit="return fblacklistadd_submit(this);">
     <input type="hidden" name="w" value="u">
+    <input type="hidden" name="token" value="<?php echo $admin_token ?>">
     
     <div class="tbl_frm01 tbl_wrap">
         <table>
@@ -203,9 +210,9 @@ $listall = '<a href="'.$_SERVER['SCRIPT_NAME'].'" class="ov_listall">전체목�
         </colgroup>
         <tbody>
         <tr>
-            <th scope="row"><label for="sb_phone">전화번호</label></th>
+            <th scope="row"><label for="sb_phone">전화번호<strong class="sound_only">필수</strong></label></th>
             <td>
-                <input type="text" name="sb_phone" id="sb_phone" class="frm_input" size="15" maxlength="11" placeholder="01012345678">
+                <input type="text" name="sb_phone" id="sb_phone" required class="required frm_input" size="15" maxlength="11" placeholder="01012345678">
                 <span class="frm_info">하이픈(-) 없이 숫자만 입력</span>
             </td>
         </tr>
@@ -241,9 +248,10 @@ function fblacklistadd_submit(f) {
     }
     
     if(!f.sb_reason.value) {
-        alert('차단사유를 입력하세요.');
-        f.sb_reason.focus();
-        return false;
+        if(!confirm('차단사유를 입력하지 않았습니다.\n\n그대로 진행하시겠습니까?')) {
+            f.sb_reason.focus();
+            return false;
+        }
     }
     
     return true;

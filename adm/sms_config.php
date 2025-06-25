@@ -6,45 +6,53 @@
  * 작성일: 2024-12-28
  */
 
-$sub_menu = "900100";
+$sub_menu = "900920";
 include_once('./_common.php');
 
-auth_check($auth[$sub_menu], 'r');
+if ($is_admin != 'super')
+    alert('최고관리자만 접근 가능합니다.');
+
+// 테이블명 정의
+$g5['sms_config_table'] = G5_TABLE_PREFIX.'sms_config';
 
 // ===================================
 // DB 테이블 존재 확인
 // ===================================
-$sql = "SHOW TABLES LIKE 'g5_sms_config'";
+$sql = " SHOW TABLES LIKE '{$g5['sms_config_table']}' ";
 $result = sql_query($sql, false);
 if(!sql_num_rows($result)) {
-    // 테이블이 없으면 설치 페이지로 이동
     alert('SMS 인증 시스템이 설치되지 않았습니다.\\n\\n설치 페이지로 이동합니다.', './sms_install.php');
 }
 
-$g5['title'] = 'SMS 설정';
+$g5['title'] = 'SMS 인증 설정';
 include_once('./admin.head.php');
 
 // SMS 설정 불러오기
-$sql = "SELECT * FROM g5_sms_config LIMIT 1";
+$sql = " select * from {$g5['sms_config_table']} limit 1 ";
 $sms = sql_fetch($sql);
 
 if(!$sms) {
-    sql_query("INSERT INTO g5_sms_config SET cf_service = 'icode'");
+    sql_query(" insert into {$g5['sms_config_table']} set cf_service = 'icode' ");
     $sms = sql_fetch($sql);
 }
 
 // 잔액 조회
 $balance_info = array();
 if($sms['cf_service'] == 'icode') {
-    // SMS5 플러그인 확인
-    if(defined('G5_SMS5_USE') && G5_SMS5_USE) {
-        // SMS5 사용 중이면 SMS5 관리 페이지로 안내
-        $balance_info['success'] = true;
-        $balance_info['balance'] = 'SMS5 관리페이지에서 확인';
-    }
-    // 그누보드 기본 아이코드 설정 확인
-    else if($config['cf_icode_id'] && $config['cf_icode_pw']) {
-        if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
+    // SMS5 사용 확인
+    if($config['cf_sms_use'] == 'icode' && $config['cf_icode_id'] && $config['cf_icode_pw']) {
+        // SMS5 설정 확인
+        if(defined('G5_SMS5_PATH') && file_exists(G5_SMS5_PATH.'/sms5.lib.php')) {
+            include_once(G5_SMS5_PATH.'/sms5.lib.php');
+            
+            $sms5 = sql_fetch("select * from {$g5['sms5_config_table']}");
+            if($sms5) {
+                $balance_info['success'] = true;
+                $balance_info['balance'] = 'SMS5 관리에서 확인';
+            }
+        }
+        // 구버전 라이브러리
+        else if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
             include_once(G5_LIB_PATH.'/icode.sms.lib.php');
             $SMS = new SMS;
             $SMS->SMS_con($config['cf_icode_server_ip'], $config['cf_icode_id'], $config['cf_icode_pw'], $config['cf_icode_server_port']);
@@ -52,28 +60,13 @@ if($sms['cf_service'] == 'icode') {
             
             if($userinfo && isset($userinfo->coin)) {
                 $balance_info['success'] = true;
-                $balance_info['balance'] = number_format($userinfo->coin);
-            }
-        }
-    } else if($sms['cf_icode_id'] && $sms['cf_icode_pw']) {
-        // SMS 인증 설정의 아이코드 정보 사용
-        if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
-            include_once(G5_LIB_PATH.'/icode.sms.lib.php');
-            $SMS = new SMS;
-            $icode_server_ip = '211.172.232.124';
-            $icode_server_port = '7295';
-            $SMS->SMS_con($icode_server_ip, $sms['cf_icode_id'], $sms['cf_icode_pw'], $icode_server_port);
-            $userinfo = $SMS->Get_UserInfo();
-            
-            if($userinfo && isset($userinfo->coin)) {
-                $balance_info['success'] = true;
-                $balance_info['balance'] = number_format($userinfo->coin);
+                $balance_info['balance'] = number_format($userinfo->coin).'건';
             }
         }
     }
 } else if($sms['cf_service'] == 'aligo' && $sms['cf_aligo_key'] && $sms['cf_aligo_userid']) {
-    if(file_exists(G5_PATH.'/plugin/sms/aligo.php')) {
-        include_once(G5_PATH.'/plugin/sms/aligo.php');
+    if(file_exists(G5_PLUGIN_PATH.'/sms/aligo.php')) {
+        include_once(G5_PLUGIN_PATH.'/sms/aligo.php');
         $sms_api = new aligo_sms($sms['cf_aligo_key'], $sms['cf_aligo_userid']);
         $balance_info = $sms_api->get_balance();
     }
@@ -82,14 +75,15 @@ if($sms['cf_service'] == 'icode') {
 
 <div class="local_desc01 local_desc">
     <p>SMS 인증 시스템의 기본 설정을 관리합니다.</p>
-    <p><a href="./sms_service_guide.php" class="btn btn_02" style="margin-top:5px;" target="_blank">📖 SMS 서비스 가입 가이드 보기</a></p>
+    <p><a href="./sms_service_guide.php" class="btn btn_02" target="_blank">📖 SMS 서비스 가입 가이드</a></p>
 </div>
 
 <form name="fsmsconfig" id="fsmsconfig" action="./sms_config_update.php" method="post" onsubmit="return fsmsconfig_submit(this);">
 <input type="hidden" name="token" value="">
 
-<section id="anc_sms_basic">
+<section>
     <h2 class="h2_frm">기본 설정</h2>
+    <?php echo $pg_anchor; ?>
     
     <div class="tbl_frm01 tbl_wrap">
         <table>
@@ -103,16 +97,15 @@ if($sms['cf_service'] == 'icode') {
             <th scope="row"><label for="cf_service">SMS 서비스 선택</label></th>
             <td>
                 <select name="cf_service" id="cf_service" onchange="change_service(this.value)">
-                    <option value="icode" <?php echo ($sms['cf_service'] == 'icode') ? 'selected' : ''; ?>>아이코드</option>
-                    <option value="aligo" <?php echo ($sms['cf_service'] == 'aligo') ? 'selected' : ''; ?>>알리고</option>
+                    <option value="icode" <?php echo get_selected($sms['cf_service'], 'icode'); ?>>아이코드</option>
+                    <option value="aligo" <?php echo get_selected($sms['cf_service'], 'aligo'); ?>>알리고</option>
                 </select>
                 <?php if($balance_info && $balance_info['success']) { ?>
                 <span class="frm_info">
                     <?php if($sms['cf_service'] == 'icode') { ?>
-                        잔액: <?php echo number_format($balance_info['balance']); ?>건
+                        잔액: <?php echo $balance_info['balance']; ?>
                     <?php } else { ?>
-                        잔액: <?php echo number_format($balance_info['balance']); ?>원 
-                        (SMS: <?php echo number_format($balance_info['sms_count']); ?>건)
+                        SMS: <?php echo number_format($balance_info['sms_count']); ?>건
                     <?php } ?>
                 </span>
                 <?php } ?>
@@ -120,55 +113,43 @@ if($sms['cf_service'] == 'icode') {
         </tr>
         
         <!-- 아이코드 설정 -->
-        <tr class="service_icode" <?php echo ($sms['cf_service'] != 'icode') ? 'style="display:none"' : ''; ?>>
-            <th scope="row" colspan="2" style="background-color:#f8f9fa; text-align:center;">
-                <?php if($config['cf_icode_id'] && $config['cf_icode_pw']) { ?>
+        <tr class="service_icode" style="display:none">
+            <th scope="row" colspan="2" style="text-align:center; background-color:#f8f9fa;">
+                <?php if($config['cf_sms_use'] == 'icode' && $config['cf_icode_id'] && $config['cf_icode_pw']) { ?>
                 <div style="padding:10px; color:#0066cc;">
-                    <strong>※ 그누보드 기본 아이코드 설정이 적용됩니다.</strong><br>
-                    <small>환경설정 > 기본환경설정에서 아이코드 정보를 수정하세요.</small>
+                    <strong>※ 그누보드 기본 SMS 설정이 적용됩니다.</strong><br>
+                    <small>환경설정 → 기본환경설정 → SMS에서 설정된 정보를 사용합니다.</small>
                 </div>
                 <?php } else { ?>
                 <div style="padding:10px; color:#666;">
-                    아래에 아이코드 정보를 입력하거나<br>
-                    환경설정 > 기본환경설정에서 설정할 수 있습니다.
+                    아이코드 서비스를 사용하려면<br>
+                    환경설정 → 기본환경설정 → SMS에서 아이코드 정보를 설정하세요.
                 </div>
                 <?php } ?>
             </th>
         </tr>
-        <?php if(!$config['cf_icode_id'] || !$config['cf_icode_pw']) { ?>
-        <tr class="service_icode" <?php echo ($sms['cf_service'] != 'icode') ? 'style="display:none"' : ''; ?>>
-            <th scope="row"><label for="cf_icode_id">아이코드 아이디</label></th>
-            <td>
-                <input type="text" name="cf_icode_id" value="<?php echo $sms['cf_icode_id']; ?>" id="cf_icode_id" class="frm_input" size="20">
-            </td>
-        </tr>
-        <tr class="service_icode" <?php echo ($sms['cf_service'] != 'icode') ? 'style="display:none"' : ''; ?>>
-            <th scope="row"><label for="cf_icode_pw">아이코드 패스워드</label></th>
-            <td>
-                <input type="password" name="cf_icode_pw" value="<?php echo $sms['cf_icode_pw']; ?>" id="cf_icode_pw" class="frm_input" size="20">
-            </td>
-        </tr>
-        <?php } ?>
         
         <!-- 알리고 설정 -->
-        <tr class="service_aligo" <?php echo ($sms['cf_service'] != 'aligo') ? 'style="display:none"' : ''; ?>>
-            <th scope="row"><label for="cf_aligo_key">알리고 API Key</label></th>
+        <tr class="service_aligo" style="display:none">
+            <th scope="row"><label for="cf_aligo_key">알리고 API Key <strong class="sound_only">필수</strong></label></th>
             <td>
                 <input type="text" name="cf_aligo_key" value="<?php echo $sms['cf_aligo_key']; ?>" id="cf_aligo_key" class="frm_input" size="50">
+                <span class="frm_info">알리고에서 발급받은 API Key</span>
             </td>
         </tr>
-        <tr class="service_aligo" <?php echo ($sms['cf_service'] != 'aligo') ? 'style="display:none"' : ''; ?>>
-            <th scope="row"><label for="cf_aligo_userid">알리고 User ID</label></th>
+        <tr class="service_aligo" style="display:none">
+            <th scope="row"><label for="cf_aligo_userid">알리고 User ID <strong class="sound_only">필수</strong></label></th>
             <td>
                 <input type="text" name="cf_aligo_userid" value="<?php echo $sms['cf_aligo_userid']; ?>" id="cf_aligo_userid" class="frm_input" size="20">
+                <span class="frm_info">알리고 로그인 아이디</span>
             </td>
         </tr>
         
         <tr>
-            <th scope="row"><label for="cf_phone">발신번호</label></th>
+            <th scope="row"><label for="cf_phone">발신번호 <strong class="sound_only">필수</strong></label></th>
             <td>
-                <input type="text" name="cf_phone" value="<?php echo $sms['cf_phone']; ?>" id="cf_phone" class="frm_input" size="20">
-                <span class="frm_info">사전 등록된 발신번호를 입력하세요. (하이픈 없이 숫자만)</span>
+                <input type="text" name="cf_phone" value="<?php echo $sms['cf_phone']; ?>" id="cf_phone" required class="required frm_input" size="20">
+                <span class="frm_info">사전 등록된 발신번호 (하이픈 없이 숫자만)</span>
             </td>
         </tr>
         </tbody>
@@ -176,7 +157,7 @@ if($sms['cf_service'] == 'icode') {
     </div>
 </section>
 
-<section id="anc_sms_use">
+<section>
     <h2 class="h2_frm">사용 설정</h2>
     
     <div class="tbl_frm01 tbl_wrap">
@@ -190,15 +171,15 @@ if($sms['cf_service'] == 'icode') {
         <tr>
             <th scope="row">회원가입 SMS 인증</th>
             <td>
-                <label><input type="radio" name="cf_use_register" value="1" <?php echo ($sms['cf_use_register']) ? 'checked' : ''; ?>> 사용</label>
-                <label><input type="radio" name="cf_use_register" value="0" <?php echo (!$sms['cf_use_register']) ? 'checked' : ''; ?>> 사용안함</label>
+                <label for="cf_use_register_1"><input type="radio" name="cf_use_register" value="1" id="cf_use_register_1" <?php echo get_checked($sms['cf_use_register'], 1); ?>> 사용</label>
+                <label for="cf_use_register_0"><input type="radio" name="cf_use_register" value="0" id="cf_use_register_0" <?php echo get_checked($sms['cf_use_register'], 0); ?>> 사용안함</label>
             </td>
         </tr>
         <tr>
             <th scope="row">비밀번호 찾기 SMS 인증</th>
             <td>
-                <label><input type="radio" name="cf_use_password" value="1" <?php echo ($sms['cf_use_password']) ? 'checked' : ''; ?>> 사용</label>
-                <label><input type="radio" name="cf_use_password" value="0" <?php echo (!$sms['cf_use_password']) ? 'checked' : ''; ?>> 사용안함</label>
+                <label for="cf_use_password_1"><input type="radio" name="cf_use_password" value="1" id="cf_use_password_1" <?php echo get_checked($sms['cf_use_password'], 1); ?>> 사용</label>
+                <label for="cf_use_password_0"><input type="radio" name="cf_use_password" value="0" id="cf_use_password_0" <?php echo get_checked($sms['cf_use_password'], 0); ?>> 사용안함</label>
             </td>
         </tr>
         </tbody>
@@ -206,7 +187,7 @@ if($sms['cf_service'] == 'icode') {
     </div>
 </section>
 
-<section id="anc_sms_limit">
+<section>
     <h2 class="h2_frm">발송 제한 설정</h2>
     
     <div class="tbl_frm01 tbl_wrap">
@@ -250,7 +231,7 @@ if($sms['cf_service'] == 'icode') {
     </div>
 </section>
 
-<section id="anc_sms_auth">
+<section>
     <h2 class="h2_frm">인증 설정</h2>
     
     <div class="tbl_frm01 tbl_wrap">
@@ -280,7 +261,7 @@ if($sms['cf_service'] == 'icode') {
     </div>
 </section>
 
-<section id="anc_sms_security">
+<section>
     <h2 class="h2_frm">보안 설정</h2>
     
     <div class="tbl_frm01 tbl_wrap">
@@ -294,8 +275,8 @@ if($sms['cf_service'] == 'icode') {
         <tr>
             <th scope="row">캡차 사용</th>
             <td>
-                <label><input type="radio" name="cf_use_captcha" value="1" <?php echo ($sms['cf_use_captcha']) ? 'checked' : ''; ?>> 사용</label>
-                <label><input type="radio" name="cf_use_captcha" value="0" <?php echo (!$sms['cf_use_captcha']) ? 'checked' : ''; ?>> 사용안함</label>
+                <label for="cf_use_captcha_1"><input type="radio" name="cf_use_captcha" value="1" id="cf_use_captcha_1" <?php echo get_checked($sms['cf_use_captcha'], 1); ?>> 사용</label>
+                <label for="cf_use_captcha_0"><input type="radio" name="cf_use_captcha" value="0" id="cf_use_captcha_0" <?php echo get_checked($sms['cf_use_captcha'], 0); ?>> 사용안함</label>
                 <span class="frm_info">일정 횟수 이상 요청 시 캡차 표시</span>
             </td>
         </tr>
@@ -309,16 +290,16 @@ if($sms['cf_service'] == 'icode') {
         <tr>
             <th scope="row">해외번호 차단</th>
             <td>
-                <label><input type="radio" name="cf_block_foreign" value="1" <?php echo ($sms['cf_block_foreign']) ? 'checked' : ''; ?>> 차단</label>
-                <label><input type="radio" name="cf_block_foreign" value="0" <?php echo (!$sms['cf_block_foreign']) ? 'checked' : ''; ?>> 허용</label>
+                <label for="cf_block_foreign_1"><input type="radio" name="cf_block_foreign" value="1" id="cf_block_foreign_1" <?php echo get_checked($sms['cf_block_foreign'], 1); ?>> 차단</label>
+                <label for="cf_block_foreign_0"><input type="radio" name="cf_block_foreign" value="0" id="cf_block_foreign_0" <?php echo get_checked($sms['cf_block_foreign'], 0); ?>> 허용</label>
                 <span class="frm_info">국내 휴대폰 번호만 허용 (010, 011, 016, 017, 018, 019)</span>
             </td>
         </tr>
         <tr>
             <th scope="row">블랙리스트 사용</th>
             <td>
-                <label><input type="radio" name="cf_use_blacklist" value="1" <?php echo ($sms['cf_use_blacklist']) ? 'checked' : ''; ?>> 사용</label>
-                <label><input type="radio" name="cf_use_blacklist" value="0" <?php echo (!$sms['cf_use_blacklist']) ? 'checked' : ''; ?>> 사용안함</label>
+                <label for="cf_use_blacklist_1"><input type="radio" name="cf_use_blacklist" value="1" id="cf_use_blacklist_1" <?php echo get_checked($sms['cf_use_blacklist'], 1); ?>> 사용</label>
+                <label for="cf_use_blacklist_0"><input type="radio" name="cf_use_blacklist" value="0" id="cf_use_blacklist_0" <?php echo get_checked($sms['cf_use_blacklist'], 0); ?>> 사용안함</label>
                 <span class="frm_info">차단된 번호 관리 기능 사용</span>
             </td>
         </tr>
@@ -349,18 +330,7 @@ function change_service(service) {
 function fsmsconfig_submit(f) {
     var service = f.cf_service.value;
     
-    if(service == 'icode') {
-        if(!f.cf_icode_id.value) {
-            alert('아이코드 아이디를 입력하세요.');
-            f.cf_icode_id.focus();
-            return false;
-        }
-        if(!f.cf_icode_pw.value) {
-            alert('아이코드 패스워드를 입력하세요.');
-            f.cf_icode_pw.focus();
-            return false;
-        }
-    } else {
+    if(service == 'aligo') {
         if(!f.cf_aligo_key.value) {
             alert('알리고 API Key를 입력하세요.');
             f.cf_aligo_key.focus();
@@ -389,6 +359,11 @@ function fsmsconfig_submit(f) {
     
     return true;
 }
+
+// 페이지 로드 시 현재 선택된 서비스에 맞게 표시
+$(function() {
+    change_service('<?php echo $sms['cf_service']; ?>');
+});
 </script>
 
 <?php

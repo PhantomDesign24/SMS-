@@ -6,14 +6,18 @@
  * 작성일: 2024-12-28
  */
 
-$sub_menu = "900100";
+$sub_menu = "900920";
 include_once('./_common.php');
 
 check_demo();
 
-auth_check($auth[$sub_menu], 'w');
+if ($is_admin != 'super')
+    alert('최고관리자만 접근 가능합니다.');
 
 check_admin_token();
+
+// 테이블명 정의
+$g5['sms_config_table'] = G5_TABLE_PREFIX.'sms_config';
 
 // 데이터 정리
 $cf_service = isset($_POST['cf_service']) ? clean_xss_tags($_POST['cf_service']) : 'icode';
@@ -45,12 +49,12 @@ if($cf_max_try < 3 || $cf_max_try > 10) $cf_max_try = 5;
 if($cf_captcha_count < 1 || $cf_captcha_count > 10) $cf_captcha_count = 3;
 
 // 기존 설정 확인
-$sql = "SELECT COUNT(*) as cnt FROM g5_sms_config";
+$sql = " select count(*) as cnt from {$g5['sms_config_table']} ";
 $row = sql_fetch($sql);
 
 if($row['cnt'] > 0) {
     // 업데이트
-    $sql = "UPDATE g5_sms_config SET
+    $sql = " update {$g5['sms_config_table']} set
             cf_service = '".sql_real_escape_string($cf_service)."',
             cf_icode_id = '".sql_real_escape_string($cf_icode_id)."',
             cf_icode_pw = '".sql_real_escape_string($cf_icode_pw)."',
@@ -72,7 +76,7 @@ if($row['cnt'] > 0) {
             ";
 } else {
     // 삽입
-    $sql = "INSERT INTO g5_sms_config SET
+    $sql = " insert into {$g5['sms_config_table']} set
             cf_service = '".sql_real_escape_string($cf_service)."',
             cf_icode_id = '".sql_real_escape_string($cf_icode_id)."',
             cf_icode_pw = '".sql_real_escape_string($cf_icode_pw)."',
@@ -95,9 +99,6 @@ if($row['cnt'] > 0) {
 }
 
 sql_query($sql);
-
-// 설정 캐시 삭제
-delete_cache_latest('sms_config');
 
 goto_url('./sms_config.php', false);
 ?>
