@@ -1,0 +1,396 @@
+<?php
+/*
+ * 파일명: sms_config.php
+ * 위치: /adm/sms_config.php
+ * 기능: SMS 인증 시스템 관리자 설정 페이지
+ * 작성일: 2024-12-28
+ */
+
+$sub_menu = "900100";
+include_once('./_common.php');
+
+auth_check($auth[$sub_menu], 'r');
+
+// ===================================
+// DB 테이블 존재 확인
+// ===================================
+$sql = "SHOW TABLES LIKE 'g5_sms_config'";
+$result = sql_query($sql, false);
+if(!sql_num_rows($result)) {
+    // 테이블이 없으면 설치 페이지로 이동
+    alert('SMS 인증 시스템이 설치되지 않았습니다.\\n\\n설치 페이지로 이동합니다.', './sms_install.php');
+}
+
+$g5['title'] = 'SMS 설정';
+include_once('./admin.head.php');
+
+// SMS 설정 불러오기
+$sql = "SELECT * FROM g5_sms_config LIMIT 1";
+$sms = sql_fetch($sql);
+
+if(!$sms) {
+    sql_query("INSERT INTO g5_sms_config SET cf_service = 'icode'");
+    $sms = sql_fetch($sql);
+}
+
+// 잔액 조회
+$balance_info = array();
+if($sms['cf_service'] == 'icode') {
+    // SMS5 플러그인 확인
+    if(defined('G5_SMS5_USE') && G5_SMS5_USE) {
+        // SMS5 사용 중이면 SMS5 관리 페이지로 안내
+        $balance_info['success'] = true;
+        $balance_info['balance'] = 'SMS5 관리페이지에서 확인';
+    }
+    // 그누보드 기본 아이코드 설정 확인
+    else if($config['cf_icode_id'] && $config['cf_icode_pw']) {
+        if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
+            include_once(G5_LIB_PATH.'/icode.sms.lib.php');
+            $SMS = new SMS;
+            $SMS->SMS_con($config['cf_icode_server_ip'], $config['cf_icode_id'], $config['cf_icode_pw'], $config['cf_icode_server_port']);
+            $userinfo = $SMS->Get_UserInfo();
+            
+            if($userinfo && isset($userinfo->coin)) {
+                $balance_info['success'] = true;
+                $balance_info['balance'] = number_format($userinfo->coin);
+            }
+        }
+    } else if($sms['cf_icode_id'] && $sms['cf_icode_pw']) {
+        // SMS 인증 설정의 아이코드 정보 사용
+        if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
+            include_once(G5_LIB_PATH.'/icode.sms.lib.php');
+            $SMS = new SMS;
+            $icode_server_ip = '211.172.232.124';
+            $icode_server_port = '7295';
+            $SMS->SMS_con($icode_server_ip, $sms['cf_icode_id'], $sms['cf_icode_pw'], $icode_server_port);
+            $userinfo = $SMS->Get_UserInfo();
+            
+            if($userinfo && isset($userinfo->coin)) {
+                $balance_info['success'] = true;
+                $balance_info['balance'] = number_format($userinfo->coin);
+            }
+        }
+    }
+} else if($sms['cf_service'] == 'aligo' && $sms['cf_aligo_key'] && $sms['cf_aligo_userid']) {
+    if(file_exists(G5_PATH.'/plugin/sms/aligo.php')) {
+        include_once(G5_PATH.'/plugin/sms/aligo.php');
+        $sms_api = new aligo_sms($sms['cf_aligo_key'], $sms['cf_aligo_userid']);
+        $balance_info = $sms_api->get_balance();
+    }
+}
+?>
+
+<div class="local_desc01 local_desc">
+    <p>SMS 인증 시스템의 기본 설정을 관리합니다.</p>
+    <p><a href="./sms_service_guide.php" class="btn btn_02" style="margin-top:5px;" target="_blank">📖 SMS 서비스 가입 가이드 보기</a></p>
+</div>
+
+<form name="fsmsconfig" id="fsmsconfig" action="./sms_config_update.php" method="post" onsubmit="return fsmsconfig_submit(this);">
+<input type="hidden" name="token" value="">
+
+<section id="anc_sms_basic">
+    <h2 class="h2_frm">기본 설정</h2>
+    
+    <div class="tbl_frm01 tbl_wrap">
+        <table>
+        <caption>SMS 기본 설정</caption>
+        <colgroup>
+            <col class="grid_4">
+            <col>
+        </colgroup>
+        <tbody>
+        <tr>
+            <th scope="row"><label for="cf_service">SMS 서비스 선택</label></th>
+            <td>
+                <select name="cf_service" id="cf_service" onchange="change_service(this.value)">
+                    <option value="icode" <?php echo ($sms['cf_service'] == 'icode') ? 'selected' : ''; ?>>아이코드</option>
+                    <option value="aligo" <?php echo ($sms['cf_service'] == 'aligo') ? 'selected' : ''; ?>>알리고</option>
+                </select>
+                <?php if($balance_info && $balance_info['success']) { ?>
+                <span class="frm_info">
+                    <?php if($sms['cf_service'] == 'icode') { ?>
+                        잔액: <?php echo number_format($balance_info['balance']); ?>건
+                    <?php } else { ?>
+                        잔액: <?php echo number_format($balance_info['balance']); ?>원 
+                        (SMS: <?php echo number_format($balance_info['sms_count']); ?>건)
+                    <?php } ?>
+                </span>
+                <?php } ?>
+            </td>
+        </tr>
+        
+        <!-- 아이코드 설정 -->
+        <tr class="service_icode" <?php echo ($sms['cf_service'] != 'icode') ? 'style="display:none"' : ''; ?>>
+            <th scope="row" colspan="2" style="background-color:#f8f9fa; text-align:center;">
+                <?php if($config['cf_icode_id'] && $config['cf_icode_pw']) { ?>
+                <div style="padding:10px; color:#0066cc;">
+                    <strong>※ 그누보드 기본 아이코드 설정이 적용됩니다.</strong><br>
+                    <small>환경설정 > 기본환경설정에서 아이코드 정보를 수정하세요.</small>
+                </div>
+                <?php } else { ?>
+                <div style="padding:10px; color:#666;">
+                    아래에 아이코드 정보를 입력하거나<br>
+                    환경설정 > 기본환경설정에서 설정할 수 있습니다.
+                </div>
+                <?php } ?>
+            </th>
+        </tr>
+        <?php if(!$config['cf_icode_id'] || !$config['cf_icode_pw']) { ?>
+        <tr class="service_icode" <?php echo ($sms['cf_service'] != 'icode') ? 'style="display:none"' : ''; ?>>
+            <th scope="row"><label for="cf_icode_id">아이코드 아이디</label></th>
+            <td>
+                <input type="text" name="cf_icode_id" value="<?php echo $sms['cf_icode_id']; ?>" id="cf_icode_id" class="frm_input" size="20">
+            </td>
+        </tr>
+        <tr class="service_icode" <?php echo ($sms['cf_service'] != 'icode') ? 'style="display:none"' : ''; ?>>
+            <th scope="row"><label for="cf_icode_pw">아이코드 패스워드</label></th>
+            <td>
+                <input type="password" name="cf_icode_pw" value="<?php echo $sms['cf_icode_pw']; ?>" id="cf_icode_pw" class="frm_input" size="20">
+            </td>
+        </tr>
+        <?php } ?>
+        
+        <!-- 알리고 설정 -->
+        <tr class="service_aligo" <?php echo ($sms['cf_service'] != 'aligo') ? 'style="display:none"' : ''; ?>>
+            <th scope="row"><label for="cf_aligo_key">알리고 API Key</label></th>
+            <td>
+                <input type="text" name="cf_aligo_key" value="<?php echo $sms['cf_aligo_key']; ?>" id="cf_aligo_key" class="frm_input" size="50">
+            </td>
+        </tr>
+        <tr class="service_aligo" <?php echo ($sms['cf_service'] != 'aligo') ? 'style="display:none"' : ''; ?>>
+            <th scope="row"><label for="cf_aligo_userid">알리고 User ID</label></th>
+            <td>
+                <input type="text" name="cf_aligo_userid" value="<?php echo $sms['cf_aligo_userid']; ?>" id="cf_aligo_userid" class="frm_input" size="20">
+            </td>
+        </tr>
+        
+        <tr>
+            <th scope="row"><label for="cf_phone">발신번호</label></th>
+            <td>
+                <input type="text" name="cf_phone" value="<?php echo $sms['cf_phone']; ?>" id="cf_phone" class="frm_input" size="20">
+                <span class="frm_info">사전 등록된 발신번호를 입력하세요. (하이픈 없이 숫자만)</span>
+            </td>
+        </tr>
+        </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="anc_sms_use">
+    <h2 class="h2_frm">사용 설정</h2>
+    
+    <div class="tbl_frm01 tbl_wrap">
+        <table>
+        <caption>SMS 사용 설정</caption>
+        <colgroup>
+            <col class="grid_4">
+            <col>
+        </colgroup>
+        <tbody>
+        <tr>
+            <th scope="row">회원가입 SMS 인증</th>
+            <td>
+                <label><input type="radio" name="cf_use_register" value="1" <?php echo ($sms['cf_use_register']) ? 'checked' : ''; ?>> 사용</label>
+                <label><input type="radio" name="cf_use_register" value="0" <?php echo (!$sms['cf_use_register']) ? 'checked' : ''; ?>> 사용안함</label>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">비밀번호 찾기 SMS 인증</th>
+            <td>
+                <label><input type="radio" name="cf_use_password" value="1" <?php echo ($sms['cf_use_password']) ? 'checked' : ''; ?>> 사용</label>
+                <label><input type="radio" name="cf_use_password" value="0" <?php echo (!$sms['cf_use_password']) ? 'checked' : ''; ?>> 사용안함</label>
+            </td>
+        </tr>
+        </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="anc_sms_limit">
+    <h2 class="h2_frm">발송 제한 설정</h2>
+    
+    <div class="tbl_frm01 tbl_wrap">
+        <table>
+        <caption>발송 제한 설정</caption>
+        <colgroup>
+            <col class="grid_4">
+            <col>
+        </colgroup>
+        <tbody>
+        <tr>
+            <th scope="row"><label for="cf_daily_limit">일일 발송 제한</label></th>
+            <td>
+                <input type="number" name="cf_daily_limit" value="<?php echo $sms['cf_daily_limit']; ?>" id="cf_daily_limit" class="frm_input" size="5" min="1" max="100"> 회
+                <span class="frm_info">동일 번호로 하루에 발송 가능한 최대 횟수</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="cf_hourly_limit">시간당 발송 제한</label></th>
+            <td>
+                <input type="number" name="cf_hourly_limit" value="<?php echo $sms['cf_hourly_limit']; ?>" id="cf_hourly_limit" class="frm_input" size="5" min="1" max="50"> 회
+                <span class="frm_info">동일 번호로 1시간 내 발송 가능한 최대 횟수</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="cf_resend_delay">재발송 대기시간</label></th>
+            <td>
+                <input type="number" name="cf_resend_delay" value="<?php echo $sms['cf_resend_delay']; ?>" id="cf_resend_delay" class="frm_input" size="5" min="30" max="600"> 초
+                <span class="frm_info">동일 번호로 재발송 시 최소 대기시간</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="cf_ip_daily_limit">IP당 일일 발송 제한</label></th>
+            <td>
+                <input type="number" name="cf_ip_daily_limit" value="<?php echo $sms['cf_ip_daily_limit']; ?>" id="cf_ip_daily_limit" class="frm_input" size="5" min="1" max="200"> 회
+                <span class="frm_info">동일 IP에서 하루에 발송 가능한 최대 횟수</span>
+            </td>
+        </tr>
+        </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="anc_sms_auth">
+    <h2 class="h2_frm">인증 설정</h2>
+    
+    <div class="tbl_frm01 tbl_wrap">
+        <table>
+        <caption>인증 설정</caption>
+        <colgroup>
+            <col class="grid_4">
+            <col>
+        </colgroup>
+        <tbody>
+        <tr>
+            <th scope="row"><label for="cf_auth_timeout">인증번호 유효시간</label></th>
+            <td>
+                <input type="number" name="cf_auth_timeout" value="<?php echo $sms['cf_auth_timeout']; ?>" id="cf_auth_timeout" class="frm_input" size="5" min="60" max="600"> 초
+                <span class="frm_info">인증번호 입력 제한시간 (60~600초)</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="cf_max_try">최대 인증 시도 횟수</label></th>
+            <td>
+                <input type="number" name="cf_max_try" value="<?php echo $sms['cf_max_try']; ?>" id="cf_max_try" class="frm_input" size="5" min="3" max="10"> 회
+                <span class="frm_info">인증번호 입력 실패 허용 횟수</span>
+            </td>
+        </tr>
+        </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="anc_sms_security">
+    <h2 class="h2_frm">보안 설정</h2>
+    
+    <div class="tbl_frm01 tbl_wrap">
+        <table>
+        <caption>보안 설정</caption>
+        <colgroup>
+            <col class="grid_4">
+            <col>
+        </colgroup>
+        <tbody>
+        <tr>
+            <th scope="row">캡차 사용</th>
+            <td>
+                <label><input type="radio" name="cf_use_captcha" value="1" <?php echo ($sms['cf_use_captcha']) ? 'checked' : ''; ?>> 사용</label>
+                <label><input type="radio" name="cf_use_captcha" value="0" <?php echo (!$sms['cf_use_captcha']) ? 'checked' : ''; ?>> 사용안함</label>
+                <span class="frm_info">일정 횟수 이상 요청 시 캡차 표시</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="cf_captcha_count">캡차 표시 기준</label></th>
+            <td>
+                <input type="number" name="cf_captcha_count" value="<?php echo $sms['cf_captcha_count']; ?>" id="cf_captcha_count" class="frm_input" size="5" min="1" max="10"> 회
+                <span class="frm_info">일일 발송 횟수가 이 값 이상일 때 캡차 표시</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">해외번호 차단</th>
+            <td>
+                <label><input type="radio" name="cf_block_foreign" value="1" <?php echo ($sms['cf_block_foreign']) ? 'checked' : ''; ?>> 차단</label>
+                <label><input type="radio" name="cf_block_foreign" value="0" <?php echo (!$sms['cf_block_foreign']) ? 'checked' : ''; ?>> 허용</label>
+                <span class="frm_info">국내 휴대폰 번호만 허용 (010, 011, 016, 017, 018, 019)</span>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">블랙리스트 사용</th>
+            <td>
+                <label><input type="radio" name="cf_use_blacklist" value="1" <?php echo ($sms['cf_use_blacklist']) ? 'checked' : ''; ?>> 사용</label>
+                <label><input type="radio" name="cf_use_blacklist" value="0" <?php echo (!$sms['cf_use_blacklist']) ? 'checked' : ''; ?>> 사용안함</label>
+                <span class="frm_info">차단된 번호 관리 기능 사용</span>
+            </td>
+        </tr>
+        </tbody>
+        </table>
+    </div>
+</section>
+
+<div class="btn_fixed_top">
+    <a href="./sms_log.php" class="btn btn_02">발송내역</a>
+    <a href="./sms_blacklist.php" class="btn btn_02">차단번호</a>
+    <input type="submit" value="확인" class="btn_submit btn" accesskey="s">
+</div>
+
+</form>
+
+<script>
+function change_service(service) {
+    if(service == 'icode') {
+        $('.service_icode').show();
+        $('.service_aligo').hide();
+    } else {
+        $('.service_icode').hide();
+        $('.service_aligo').show();
+    }
+}
+
+function fsmsconfig_submit(f) {
+    var service = f.cf_service.value;
+    
+    if(service == 'icode') {
+        if(!f.cf_icode_id.value) {
+            alert('아이코드 아이디를 입력하세요.');
+            f.cf_icode_id.focus();
+            return false;
+        }
+        if(!f.cf_icode_pw.value) {
+            alert('아이코드 패스워드를 입력하세요.');
+            f.cf_icode_pw.focus();
+            return false;
+        }
+    } else {
+        if(!f.cf_aligo_key.value) {
+            alert('알리고 API Key를 입력하세요.');
+            f.cf_aligo_key.focus();
+            return false;
+        }
+        if(!f.cf_aligo_userid.value) {
+            alert('알리고 User ID를 입력하세요.');
+            f.cf_aligo_userid.focus();
+            return false;
+        }
+    }
+    
+    if(!f.cf_phone.value) {
+        alert('발신번호를 입력하세요.');
+        f.cf_phone.focus();
+        return false;
+    }
+    
+    // 발신번호 형식 체크
+    var phone = f.cf_phone.value.replace(/[^0-9]/g, '');
+    if(!/^0[0-9]{8,10}$/.test(phone)) {
+        alert('올바른 발신번호 형식이 아닙니다.');
+        f.cf_phone.focus();
+        return false;
+    }
+    
+    return true;
+}
+</script>
+
+<?php
+include_once('./admin.tail.php');
+?>
