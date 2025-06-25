@@ -4,6 +4,7 @@
  * 위치: /extend/sms_config.php
  * 기능: SMS 인증 시스템 공통 함수 및 설정
  * 작성일: 2024-12-28
+ * 수정일: 2024-12-29 (설정값 로드 수정)
  */
 
 if (!defined('_GNUBOARD_')) exit;
@@ -14,14 +15,20 @@ if (!defined('_GNUBOARD_')) exit;
 $g5_sms_config = array();
 
 // 테이블 존재 확인
-$sql = " SHOW TABLES LIKE '{$g5['sms_config_table']}' ";
+$sql = "SHOW TABLES LIKE 'g5_sms_config'";
 $table_exists = sql_num_rows(sql_query($sql, false));
 
 if($table_exists) {
-    $sql = " select * from {$g5['sms_config_table']} limit 1 ";
+    $sql = "SELECT * FROM g5_sms_config LIMIT 1";
     $result = sql_query($sql, false);
     if($result && $row = sql_fetch_array($result)) {
         $g5_sms_config = $row;
+        
+        // 기본값 설정 (DB에 값이 없는 경우)
+        $g5_sms_config['cf_use_sms'] = isset($row['cf_use_sms']) ? $row['cf_use_sms'] : 0;
+        $g5_sms_config['cf_use_register'] = isset($row['cf_use_register']) ? $row['cf_use_register'] : 0;
+        $g5_sms_config['cf_use_password'] = isset($row['cf_use_password']) ? $row['cf_use_password'] : 0;
+        $g5_sms_config['cf_find_use'] = isset($row['cf_use_password']) ? $row['cf_use_password'] : 0; // cf_find_use는 cf_use_password와 동일
     }
 }
 
@@ -96,7 +103,7 @@ function generate_auth_code($length = 6) {
  * @return boolean 차단 여부
  */
 function is_blacklisted_phone($phone) {
-    global $g5_sms_config, $g5;
+    global $g5_sms_config;
     
     if(!$g5_sms_config['cf_use_blacklist']) {
         return false;
@@ -104,7 +111,7 @@ function is_blacklisted_phone($phone) {
     
     $phone = preg_replace('/[^0-9]/', '', $phone);
     
-    $sql = " select count(*) as cnt from {$g5['sms_blacklist_table']} where sb_phone = '".sql_real_escape_string($phone)."' ";
+    $sql = "SELECT COUNT(*) as cnt FROM g5_sms_blacklist WHERE sb_phone = '".sql_real_escape_string($phone)."'";
     $row = sql_fetch($sql);
     
     return ($row['cnt'] > 0);
@@ -118,16 +125,17 @@ function is_blacklisted_phone($phone) {
  * @return array 결과 배열
  */
 function check_sms_limit($phone, $ip) {
-    global $g5_sms_config, $g5;
+    global $g5_sms_config;
     
     $phone = preg_replace('/[^0-9]/', '', $phone);
-    $today = G5_TIME_YMD;
-    $current_time = G5_TIME_YMDHIS;
+    $today = date('Y-m-d');
+    $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
+    $current_time = $now->format('Y-m-d H:i:s');
     
     // 오늘 발송 정보 조회
-    $sql = " select * from {$g5['sms_limit_table']} 
-            where sl_phone = '".sql_real_escape_string($phone)."' 
-              and sl_date = '".sql_real_escape_string($today)."' ";
+    $sql = "SELECT * FROM g5_sms_limit 
+            WHERE sl_phone = '".sql_real_escape_string($phone)."' 
+            AND sl_date = '".sql_real_escape_string($today)."'";
     $limit = sql_fetch($sql);
     
     $result = array(
@@ -137,9 +145,8 @@ function check_sms_limit($phone, $ip) {
     
     // 재발송 대기시간 체크
     if($limit && $limit['sl_last_send']) {
-        $last_time = strtotime($limit['sl_last_send']);
-        $current = strtotime($current_time);
-        $diff = $current - $last_time;
+        $last_send = new DateTime($limit['sl_last_send']);
+        $diff = $now->getTimestamp() - $last_send->getTimestamp();
         
         if($diff < $g5_sms_config['cf_resend_delay']) {
             $wait = $g5_sms_config['cf_resend_delay'] - $diff;
@@ -158,9 +165,8 @@ function check_sms_limit($phone, $ip) {
     
     // 시간당 발송 제한 체크
     if($limit && $limit['sl_last_send']) {
-        $last_time = strtotime($limit['sl_last_send']);
-        $current = strtotime($current_time);
-        $hourly_diff = $current - $last_time;
+        $last_send = new DateTime($limit['sl_last_send']);
+        $hourly_diff = $now->getTimestamp() - $last_send->getTimestamp();
         
         if($hourly_diff < 3600 && $limit['sl_hourly_count'] >= $g5_sms_config['cf_hourly_limit']) {
             $result['allowed'] = false;
@@ -170,9 +176,9 @@ function check_sms_limit($phone, $ip) {
     }
     
     // IP별 일일 발송 제한 체크
-    $sql = " select sum(sl_ip_count) as total from {$g5['sms_limit_table']} 
-            where sl_ip = '".sql_real_escape_string($ip)."' 
-              and sl_date = '".sql_real_escape_string($today)."' ";
+    $sql = "SELECT SUM(sl_ip_count) as total FROM g5_sms_limit 
+            WHERE sl_ip = '".sql_real_escape_string($ip)."' 
+            AND sl_date = '".sql_real_escape_string($today)."'";
     $ip_limit = sql_fetch($sql);
     
     if($ip_limit && $ip_limit['total'] >= $g5_sms_config['cf_ip_daily_limit']) {
@@ -191,43 +197,41 @@ function check_sms_limit($phone, $ip) {
  * @param string $ip IP주소
  */
 function update_sms_limit($phone, $ip) {
-    global $g5;
-    
     $phone = preg_replace('/[^0-9]/', '', $phone);
-    $today = G5_TIME_YMD;
-    $current_time = G5_TIME_YMDHIS;
+    $today = date('Y-m-d');
+    $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
+    $current_time = $now->format('Y-m-d H:i:s');
     
     // 기존 데이터 조회
-    $sql = " select * from {$g5['sms_limit_table']} 
-            where sl_phone = '".sql_real_escape_string($phone)."' 
-              and sl_date = '".sql_real_escape_string($today)."' ";
+    $sql = "SELECT * FROM g5_sms_limit 
+            WHERE sl_phone = '".sql_real_escape_string($phone)."' 
+            AND sl_date = '".sql_real_escape_string($today)."'";
     $limit = sql_fetch($sql);
     
     if($limit) {
         // 시간당 카운트 리셋 체크
-        $last_time = strtotime($limit['sl_last_send']);
-        $current = strtotime($current_time);
-        $diff = $current - $last_time;
+        $last_send = new DateTime($limit['sl_last_send']);
+        $diff = $now->getTimestamp() - $last_send->getTimestamp();
         $hourly_count = ($diff >= 3600) ? 1 : $limit['sl_hourly_count'] + 1;
         
-        $sql = " update {$g5['sms_limit_table']} set 
+        $sql = "UPDATE g5_sms_limit SET 
                 sl_daily_count = sl_daily_count + 1,
                 sl_hourly_count = '".sql_real_escape_string($hourly_count)."',
                 sl_last_send = '".sql_real_escape_string($current_time)."',
                 sl_ip = '".sql_real_escape_string($ip)."',
                 sl_ip_count = sl_ip_count + 1
-                where sl_phone = '".sql_real_escape_string($phone)."' 
-                  and sl_date = '".sql_real_escape_string($today)."' ";
+                WHERE sl_phone = '".sql_real_escape_string($phone)."' 
+                AND sl_date = '".sql_real_escape_string($today)."'";
         sql_query($sql);
     } else {
-        $sql = " insert into {$g5['sms_limit_table']} set
+        $sql = "INSERT INTO g5_sms_limit SET
                 sl_phone = '".sql_real_escape_string($phone)."',
                 sl_date = '".sql_real_escape_string($today)."',
                 sl_daily_count = 1,
                 sl_hourly_count = 1,
                 sl_last_send = '".sql_real_escape_string($current_time)."',
                 sl_ip = '".sql_real_escape_string($ip)."',
-                sl_ip_count = 1 ";
+                sl_ip_count = 1";
         sql_query($sql);
     }
 }
@@ -238,18 +242,17 @@ function update_sms_limit($phone, $ip) {
  * @param array $data 로그 데이터
  */
 function insert_sms_log($data) {
-    global $g5;
+    $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
+    $current_time = $now->format('Y-m-d H:i:s');
     
-    $current_time = G5_TIME_YMDHIS;
-    
-    $sql = " insert into {$g5['sms_log_table']} set
+    $sql = "INSERT INTO g5_sms_log SET
             sl_type = '".sql_real_escape_string($data['type'])."',
             mb_id = '".sql_real_escape_string($data['mb_id'])."',
             sl_phone = '".sql_real_escape_string($data['phone'])."',
             sl_message = '".sql_real_escape_string($data['message'])."',
             sl_result = '".sql_real_escape_string($data['result'])."',
             sl_ip = '".sql_real_escape_string($data['ip'])."',
-            sl_datetime = '".sql_real_escape_string($current_time)."' ";
+            sl_datetime = '".sql_real_escape_string($current_time)."'";
     sql_query($sql);
 }
 
@@ -260,19 +263,23 @@ function insert_sms_log($data) {
  * @return boolean 성공 여부
  */
 function save_auth_code($data) {
-    global $g5_sms_config, $g5;
+    global $g5_sms_config;
     
-    $current_time = G5_TIME_YMDHIS;
-    $expire_time = date('Y-m-d H:i:s', strtotime($current_time) + $g5_sms_config['cf_auth_timeout']);
+    $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
+    $current_time = $now->format('Y-m-d H:i:s');
+    
+    $expire = clone $now;
+    $expire->add(new DateInterval('PT'.$g5_sms_config['cf_auth_timeout'].'S'));
+    $expire_time = $expire->format('Y-m-d H:i:s');
     
     // 기존 미인증 데이터 삭제
-    $sql = " delete from {$g5['sms_auth_table']} 
-            where sa_phone = '".sql_real_escape_string($data['phone'])."' 
-              and sa_verified = 0 ";
+    $sql = "DELETE FROM g5_sms_auth 
+            WHERE sa_phone = '".sql_real_escape_string($data['phone'])."' 
+            AND sa_verified = 0";
     sql_query($sql);
     
     // 새 인증번호 저장
-    $sql = " insert into {$g5['sms_auth_table']} set
+    $sql = "INSERT INTO g5_sms_auth SET
             sa_type = '".sql_real_escape_string($data['type'])."',
             sa_phone = '".sql_real_escape_string($data['phone'])."',
             sa_auth_code = '".sql_real_escape_string($data['auth_code'])."',
@@ -280,7 +287,7 @@ function save_auth_code($data) {
             sa_try_count = 0,
             sa_verified = 0,
             sa_datetime = '".sql_real_escape_string($current_time)."',
-            sa_expire_datetime = '".sql_real_escape_string($expire_time)."' ";
+            sa_expire_datetime = '".sql_real_escape_string($expire_time)."'";
     
     return sql_query($sql);
 }
@@ -294,10 +301,11 @@ function save_auth_code($data) {
  * @return array 결과 배열
  */
 function verify_auth_code($phone, $code, $type) {
-    global $g5_sms_config, $g5;
+    global $g5_sms_config;
     
     $phone = preg_replace('/[^0-9]/', '', $phone);
-    $current_time = G5_TIME_YMDHIS;
+    $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
+    $current_time = $now->format('Y-m-d H:i:s');
     
     $result = array(
         'verified' => false,
@@ -305,12 +313,12 @@ function verify_auth_code($phone, $code, $type) {
     );
     
     // 인증 정보 조회
-    $sql = " select * from {$g5['sms_auth_table']} 
-            where sa_phone = '".sql_real_escape_string($phone)."' 
-              and sa_type = '".sql_real_escape_string($type)."'
-              and sa_verified = 0
-              and sa_expire_datetime > '".sql_real_escape_string($current_time)."'
-            order by sa_id desc limit 1 ";
+    $sql = "SELECT * FROM g5_sms_auth 
+            WHERE sa_phone = '".sql_real_escape_string($phone)."' 
+            AND sa_type = '".sql_real_escape_string($type)."'
+            AND sa_verified = 0
+            AND sa_expire_datetime > '".sql_real_escape_string($current_time)."'
+            ORDER BY sa_id DESC LIMIT 1";
     $auth = sql_fetch($sql);
     
     if(!$auth) {
@@ -325,16 +333,16 @@ function verify_auth_code($phone, $code, $type) {
     }
     
     // 시도 횟수 증가
-    $sql = " update {$g5['sms_auth_table']} set 
+    $sql = "UPDATE g5_sms_auth SET 
             sa_try_count = sa_try_count + 1 
-            where sa_id = '".sql_real_escape_string($auth['sa_id'])."' ";
+            WHERE sa_id = '".sql_real_escape_string($auth['sa_id'])."'";
     sql_query($sql);
     
     // 인증번호 확인
     if($auth['sa_auth_code'] === $code) {
-        $sql = " update {$g5['sms_auth_table']} set 
+        $sql = "UPDATE g5_sms_auth SET 
                 sa_verified = 1 
-                where sa_id = '".sql_real_escape_string($auth['sa_id'])."' ";
+                WHERE sa_id = '".sql_real_escape_string($auth['sa_id'])."'";
         sql_query($sql);
         
         $result['verified'] = true;
@@ -355,19 +363,20 @@ function verify_auth_code($phone, $code, $type) {
  * @return boolean 인증 여부
  */
 function is_verified_phone($phone, $type) {
-    global $g5;
-    
     $phone = preg_replace('/[^0-9]/', '', $phone);
-    $current_time = G5_TIME_YMDHIS;
+    $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
+    $current_time = $now->format('Y-m-d H:i:s');
     
     // 30분 이내 인증 완료 데이터 확인
-    $expire_time = date('Y-m-d H:i:s', strtotime($current_time) - 1800);
+    $expire = clone $now;
+    $expire->sub(new DateInterval('PT1800S')); // 30분
+    $expire_time = $expire->format('Y-m-d H:i:s');
     
-    $sql = " select count(*) as cnt from {$g5['sms_auth_table']} 
-            where sa_phone = '".sql_real_escape_string($phone)."' 
-              and sa_type = '".sql_real_escape_string($type)."'
-              and sa_verified = 1
-              and sa_datetime > '".sql_real_escape_string($expire_time)."' ";
+    $sql = "SELECT COUNT(*) as cnt FROM g5_sms_auth 
+            WHERE sa_phone = '".sql_real_escape_string($phone)."' 
+            AND sa_type = '".sql_real_escape_string($type)."'
+            AND sa_verified = 1
+            AND sa_datetime > '".sql_real_escape_string($expire_time)."'";
     $row = sql_fetch($sql);
     
     return ($row['cnt'] > 0);
@@ -392,36 +401,33 @@ function send_sms($phone, $message, $type = 'etc') {
     // SMS 서비스별 발송 처리
     if($g5_sms_config['cf_service'] == 'icode') {
         // 그누보드5 기본 SMS 기능 사용
+        $sms_send_result = false;
         
-        // 1. SMS 문자전송 사용
-        if($config['cf_sms_use'] == 'icode' && file_exists(G5_SMS5_PATH.'/sms5.lib.php')) {
-            include_once(G5_SMS5_PATH.'/sms5.lib.php');
+        // 1. SMS5 플러그인 확인 (최신)
+        if(defined('G5_SMS5_USE') && G5_SMS5_USE && file_exists(G5_PLUGIN_PATH.'/sms5/sms5.lib.php')) {
+            include_once(G5_PLUGIN_PATH.'/sms5/sms5.lib.php');
             
-            // SMS 설정값 불러오기
-            $sms5 = sql_fetch("select * from {$g5['sms5_config_table']}");
+            $sms5 = new SMS5;
+            $send_hp = $g5_sms_config['cf_phone'];
+            $recv_hp = $phone;
             
-            if($sms5['cf_phone']) {
-                $SMS = new SMS5();
-                $SMS->SMS_con($config['cf_icode_server_ip'], $config['cf_icode_id'], $config['cf_icode_pw'], $config['cf_icode_server_port']);
-                
-                $recv_list = preg_replace('/[^0-9]/', '', $phone);
-                $send_list = preg_replace('/[^0-9]/', '', $g5_sms_config['cf_phone']);
-                
-                $SMS->Add($recv_list, $send_list, $config['cf_icode_id'], iconv("utf-8", "euc-kr", stripslashes($message)), "");
-                $SMS->Send();
-                $SMS->Init();
-                
+            // SMS5 발송
+            $sms5->send($send_hp, $recv_hp, $message);
+            
+            if($sms5->result == 1) {
                 $result['success'] = true;
-                $result['message'] = '발송 완료';
+                $result['message'] = '발송 성공';
             } else {
-                $result['message'] = 'SMS 기본설정에서 전화번호를 설정해주세요.';
+                $result['success'] = false;
+                $result['message'] = '발송 실패';
             }
+            $sms_send_result = true;
         }
-        // 2. 구버전 라이브러리 확인
+        // 2. 구버전 아이코드 라이브러리 확인
         else if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
             include_once(G5_LIB_PATH.'/icode.sms.lib.php');
             
-            // 아이코드 설정 확인
+            // 아이코드 설정 확인 (기본 설정 우선, 없으면 SMS 인증 설정 사용)
             $icode_id = $config['cf_icode_id'] ? $config['cf_icode_id'] : $g5_sms_config['cf_icode_id'];
             $icode_pw = $config['cf_icode_pw'] ? $config['cf_icode_pw'] : $g5_sms_config['cf_icode_pw'];
             $icode_server_ip = $config['cf_icode_server_ip'] ? $config['cf_icode_server_ip'] : '211.172.232.124';
@@ -435,21 +441,33 @@ function send_sms($phone, $message, $type = 'etc') {
             $SMS = new SMS;
             $SMS->SMS_con($icode_server_ip, $icode_id, $icode_pw, $icode_server_port);
             
-            $recv_list = preg_replace('/[^0-9]/', '', $phone);
-            $send_list = array(preg_replace('/[^0-9]/', '', $g5_sms_config['cf_phone']));
+            // 발송
+            $recv_list = $phone;
+			$send_list = $g5_sms_config['cf_phone']; // 배열 아님, 문자로만
+
             
-            $SMS->Add($recv_list, $send_list, $config['cf_icode_id'], iconv("utf-8", "euc-kr", stripslashes($message)), "");
+            $SMS->Add($recv_list, $send_list, $g5_sms_config['cf_phone'], '', '', $message, '', 1);
             $SMS->Send();
             
-            $result['success'] = true;
-            $result['message'] = '발송 완료';
-        } else {
-            $result['message'] = 'SMS 모듈이 설치되어 있지 않습니다.';
+            // 결과 확인
+            if($SMS->result) {
+                $result['success'] = true;
+                $result['message'] = '발송 성공';
+            } else {
+                $result['success'] = false;
+                $result['message'] = '발송 실패';
+            }
+            $sms_send_result = true;
+        }
+        
+        if(!$sms_send_result) {
+            $result['message'] = '아이코드 SMS 라이브러리가 없습니다. SMS5 플러그인을 설치하거나 아이코드 라이브러리를 확인하세요.';
+            return $result;
         }
     } else {
         // 알리고 사용
-        if(file_exists(G5_PLUGIN_PATH.'/sms/aligo.php')) {
-            include_once(G5_PLUGIN_PATH.'/sms/aligo.php');
+        if(file_exists(G5_PATH.'/plugin/sms/aligo.php')) {
+            include_once(G5_PATH.'/plugin/sms/aligo.php');
             $sms = new aligo_sms($g5_sms_config['cf_aligo_key'], $g5_sms_config['cf_aligo_userid']);
             $result = $sms->send($g5_sms_config['cf_phone'], $phone, $message);
         } else {
@@ -479,18 +497,18 @@ function send_sms($phone, $message, $type = 'etc') {
  * @return boolean 캡차 표시 여부
  */
 function need_captcha($phone) {
-    global $g5_sms_config, $g5;
+    global $g5_sms_config;
     
     if(!$g5_sms_config['cf_use_captcha']) {
         return false;
     }
     
     $phone = preg_replace('/[^0-9]/', '', $phone);
-    $today = G5_TIME_YMD;
+    $today = date('Y-m-d');
     
-    $sql = " select sl_daily_count from {$g5['sms_limit_table']} 
-            where sl_phone = '".sql_real_escape_string($phone)."' 
-              and sl_date = '".sql_real_escape_string($today)."' ";
+    $sql = "SELECT sl_daily_count FROM g5_sms_limit 
+            WHERE sl_phone = '".sql_real_escape_string($phone)."' 
+            AND sl_date = '".sql_real_escape_string($today)."'";
     $limit = sql_fetch($sql);
     
     if($limit && $limit['sl_daily_count'] >= $g5_sms_config['cf_captcha_count']) {
@@ -500,10 +518,15 @@ function need_captcha($phone) {
     return false;
 }
 
-// 테이블명 정의
-$g5['sms_config_table'] = G5_TABLE_PREFIX.'sms_config';
-$g5['sms_log_table'] = G5_TABLE_PREFIX.'sms_log';
-$g5['sms_auth_table'] = G5_TABLE_PREFIX.'sms_auth';
-$g5['sms_blacklist_table'] = G5_TABLE_PREFIX.'sms_blacklist';
-$g5['sms_limit_table'] = G5_TABLE_PREFIX.'sms_limit';
+// 디버깅용 (임시)
+if(!function_exists('sms_config_debug')) {
+    function sms_config_debug() {
+        global $g5_sms_config;
+        echo "<!-- SMS Config Debug\n";
+        echo "cf_use_sms: " . (isset($g5_sms_config['cf_use_sms']) ? $g5_sms_config['cf_use_sms'] : 'not set') . "\n";
+        echo "cf_use_password: " . (isset($g5_sms_config['cf_use_password']) ? $g5_sms_config['cf_use_password'] : 'not set') . "\n";
+        echo "cf_use_register: " . (isset($g5_sms_config['cf_use_register']) ? $g5_sms_config['cf_use_register'] : 'not set') . "\n";
+        echo "-->\n";
+    }
+}
 ?>

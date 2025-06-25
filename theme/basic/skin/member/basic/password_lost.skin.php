@@ -1,269 +1,444 @@
 <?php
 /*
- * 파일명: password_lost.skin.php (SMS 인증 추가)
+ * 파일명: password_lost.skin.php
  * 위치: /skin/member/basic/password_lost.skin.php
- * 기능: 비밀번호 찾기에 SMS 인증 기능 추가 (디자인 포함)
- * 작성일: 2024-12-28
+ * 기능: 회원정보 찾기 스킨 (SMS 인증 Ajax 처리)
+ * 작성일: 2024-12-29
  */
 
-// SMS 설정 확인
+if (!defined('_GNUBOARD_')) exit; // 개별 페이지 접근 불가
+
+// add_stylesheet('css 구문', 출력순서); 숫자가 작을 수록 먼저 출력됨
+add_stylesheet('<link rel="stylesheet" href="'.$member_skin_url.'/style.css">', 0);
+
+// SMS 설정 가져오기
 $sms_config = get_sms_config();
-$use_sms_auth = $sms_config && $sms_config['cf_use_password'];
-?>
+$use_sms = (isset($sms_config['cf_use_sms']) ? $sms_config['cf_use_sms'] : $sms_config['cf_use_password']) && $sms_config['cf_use_password'];
 
-<!-- ===================================
- * SMS 인증 스타일
- * =================================== -->
+if($config['cf_cert_use'] && ($config['cf_cert_simple'] || $config['cf_cert_ipin'] || $config['cf_cert_hp'])) { ?>
+    <script src="<?php echo G5_JS_URL ?>/certify.js?v=<?php echo G5_JS_VER; ?>"></script>    
+<?php } ?>
+
+<!-- 회원정보 찾기 시작 { -->
+<div id="find_info" class="new_win">
+    <h1><?php echo $g5['title'] ?></h1>
+    
+    <div class="find_method_tabs">
+        <ul>
+            <li class="active"><a href="#find_email">이메일로 찾기</a></li>
+            <?php if($use_sms) { ?>
+            <li><a href="#find_sms">SMS 인증으로 찾기</a></li>
+            <?php } ?>
+            <?php if($config['cf_cert_use'] && $config['cf_cert_find']) { ?>
+            <li><a href="#find_cert">본인인증으로 찾기</a></li>
+            <?php } ?>
+        </ul>
+    </div>
+
+    <!-- 이메일로 찾기 -->
+    <div id="find_email" class="find_method active">
+        <form name="fpasswordlost" action="<?php echo $action_url ?>" onsubmit="return fpasswordlost_submit(this);" method="post" autocomplete="off">
+        <input type="hidden" name="cert_no" value="">
+        <fieldset>
+            <p class="info_text">
+                회원가입 시 등록하신 이메일 주소를 입력해 주세요.<br>
+                해당 이메일로 아이디와 비밀번호 재설정 링크를 보내드립니다.
+            </p>
+            
+            <div class="frm_input_wrap">
+                <label for="mb_email" class="sound_only">E-mail 주소<strong>필수</strong></label>
+                <input type="text" name="mb_email" id="mb_email" required class="required frm_input email full_input" size="30" placeholder="E-mail 주소">
+            </div>
+            
+            <?php echo captcha_html(); ?>
+            
+            <button type="submit" class="btn_submit full">인증메일 발송</button>
+        </fieldset>
+        </form>
+    </div>
+
+    <?php if($use_sms) { ?>
+    <!-- SMS 인증으로 찾기 -->
+    <div id="find_sms" class="find_method">
+        <!-- STEP 1: 휴대폰 번호 입력 -->
+        <div id="sms_step1" class="sms_step active">
+            <form name="fsmspasswordlost" id="fsmspasswordlost" method="post">
+            <fieldset>
+                <p class="info_text">
+                    회원가입 시 등록하신 휴대폰 번호를 입력해 주세요.<br>
+                    SMS 인증 후 비밀번호를 재설정할 수 있습니다.
+                </p>
+                
+                <div class="frm_input_wrap">
+                    <label for="mb_hp" class="sound_only">휴대폰번호<strong>필수</strong></label>
+                    <input type="tel" name="mb_hp" id="mb_hp" required class="required frm_input full_input" placeholder="휴대폰번호 (- 없이 입력)" maxlength="11">
+                </div>
+                
+                <button type="button" id="btn_send_sms" class="btn_submit full">인증번호 발송</button>
+            </fieldset>
+            </form>
+        </div>
+        
+        <!-- STEP 2: 인증번호 입력 -->
+        <div id="sms_step2" class="sms_step">
+            <form name="fsmsverify" id="fsmsverify" method="post">
+            <input type="hidden" name="mb_hp_verify" id="mb_hp_verify" value="">
+            <fieldset>
+                <div class="verify_info">
+                    <p class="phone_info">
+                        <strong id="phone_display"></strong>로<br>
+                        인증번호를 발송했습니다.
+                    </p>
+                    <p class="time_info">
+                        인증번호 유효시간: <span id="timer" class="timer_text"></span>
+                    </p>
+                </div>
+                
+                <div class="frm_input_wrap">
+                    <label for="auth_code" class="sound_only">인증번호</label>
+                    <input type="text" name="auth_code" id="auth_code" required class="required frm_input full_input" placeholder="인증번호 6자리" maxlength="6">
+                </div>
+                
+                <button type="button" id="btn_verify_sms" class="btn_submit full">인증 확인</button>
+                
+                <div class="verify_help">
+                    <button type="button" id="btn_resend_sms" class="btn_text">인증번호 재발송</button>
+                    <button type="button" id="btn_change_phone" class="btn_text">휴대폰 번호 변경</button>
+                </div>
+            </fieldset>
+            </form>
+        </div>
+        
+        <!-- STEP 3: 비밀번호 재설정 -->
+        <div id="sms_step3" class="sms_step">
+            <form name="fpasswordreset" id="fpasswordreset" method="post">
+            <input type="hidden" name="mb_id" id="reset_mb_id" value="">
+            <input type="hidden" name="reset_token" id="reset_token" value="">
+            <fieldset>
+                <p class="info_text">
+                    회원님의 아이디: <strong id="user_mb_id"></strong><br>
+                    새로운 비밀번호를 입력해주세요.
+                </p>
+                
+                <div class="frm_input_wrap">
+                    <label for="mb_password_new" class="sound_only">새 비밀번호<strong>필수</strong></label>
+                    <input type="password" name="mb_password" id="mb_password_new" required class="required frm_input full_input" placeholder="새 비밀번호">
+                </div>
+                
+                <div class="frm_input_wrap">
+                    <label for="mb_password_re" class="sound_only">새 비밀번호 확인<strong>필수</strong></label>
+                    <input type="password" name="mb_password_re" id="mb_password_re" required class="required frm_input full_input" placeholder="새 비밀번호 확인">
+                </div>
+                
+                <button type="button" id="btn_reset_password" class="btn_submit full">비밀번호 변경</button>
+            </fieldset>
+            </form>
+        </div>
+    </div>
+    <?php } ?>
+
+    <?php if($config['cf_cert_use'] && $config['cf_cert_find']) { ?>
+    <!-- 본인인증으로 찾기 -->
+    <div id="find_cert" class="find_method">
+        <div class="cert_info">
+            <p class="info_text">
+                본인인증을 통해 아이디 찾기와 비밀번호 재설정이 가능합니다.<br>
+                본인인증 시 제공되는 정보는 해당 인증기관에서 직접 수집하며,<br>
+                인증 이외의 용도로 이용 또는 저장하지 않습니다.
+            </p>
+            
+            <div class="cert_btn_list">
+                <?php if($config['cf_cert_simple']) { ?>
+                <button type="button" id="win_sa_kakao_cert" class="btn_cert">
+                    <span class="cert_icon kakao"></span>
+                    카카오 간편인증
+                </button>
+                <?php } ?>
+                
+                <?php if($config['cf_cert_hp']) { ?>
+                <button type="button" id="win_hp_cert" class="btn_cert">
+                    <span class="cert_icon phone"></span>
+                    휴대폰 본인인증
+                </button>
+                <?php } ?>
+                
+                <?php if($config['cf_cert_ipin']) { ?>
+                <button type="button" id="win_ipin_cert" class="btn_cert">
+                    <span class="cert_icon ipin"></span>
+                    아이핀 본인인증
+                </button>
+                <?php } ?>
+            </div>
+        </div>
+    </div>
+    <?php } ?>
+    
+    <div class="win_btn">
+        <a href="<?php echo G5_URL ?>" class="btn_close">홈으로</a>
+    </div>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="loading_overlay" style="display:none;">
+    <div class="loading_spinner"></div>
+</div>
+
 <style>
-/* 전체 컨테이너 */
-.password-lost-wrap {
-    max-width: 500px;
-    margin: 50px auto;
-    padding: 0;
+/* 회원정보 찾기 스타일 */
+#find_info {
+    width: 500px;
+    margin: 0 auto;
 }
 
-/* 단계별 진행 표시 */
-.step-indicator {
-    display: flex;
-    margin-bottom: 30px;
-    position: relative;
-}
-
-.step-indicator::before {
-    content: '';
-    position: absolute;
-    top: 20px;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background-color: #e0e0e0;
-    z-index: 0;
-}
-
-.step-item {
-    flex: 1;
+#find_info h1 {
     text-align: center;
-    position: relative;
-    z-index: 1;
+    margin-bottom: 30px;
+    font-size: 24px;
 }
 
-.step-number {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: #e0e0e0;
-    color: #999;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    margin-bottom: 8px;
+/* 탭 스타일 */
+.find_method_tabs {
+    margin-bottom: 30px;
+}
+
+.find_method_tabs ul {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-bottom: 2px solid #ddd;
+}
+
+.find_method_tabs li {
+    flex: 1;
+}
+
+.find_method_tabs a {
+    display: block;
+    padding: 15px;
+    text-align: center;
+    color: #666;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
     transition: all 0.3s;
 }
 
-.step-item.active .step-number {
-    background-color: #2196F3;
-    color: white;
-    transform: scale(1.1);
+.find_method_tabs li.active a {
+    color: #333;
+    font-weight: bold;
+    border-bottom-color: #333;
 }
 
-.step-item.completed .step-number {
-    background-color: #4CAF50;
-    color: white;
+/* 컨텐츠 영역 */
+.find_method {
+    display: none;
+    padding: 30px;
+    background: #f9f9f9;
+    border-radius: 5px;
 }
 
-.step-item.completed .step-number::after {
-    content: '✓';
-    position: absolute;
+.find_method.active {
+    display: block;
 }
 
-.step-label {
-    font-size: 13px;
+.info_text {
+    margin-bottom: 20px;
+    line-height: 1.6;
     color: #666;
 }
 
-.step-item.active .step-label {
-    color: #2196F3;
-    font-weight: 500;
-}
-
-/* 단계별 컨텐츠 */
-.step-content {
-    background-color: white;
-    border-radius: 12px;
-    padding: 30px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
-}
-
-.step-content h3 {
-    font-size: 20px;
-    margin-bottom: 20px;
-    color: #333;
-}
-
-/* 입력 폼 스타일 */
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 500;
-    color: #555;
-}
-
-.form-control {
-    width: 100%;
-    height: 50px;
-    padding: 0 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 15px;
-    transition: all 0.3s;
-}
-
-.form-control:focus {
-    border-color: #2196F3;
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
-}
-
-.form-control[readonly] {
-    background-color: #f5f5f5;
-    cursor: not-allowed;
-}
-
-/* 버튼 스타일 */
-.btn {
-    height: 50px;
-    padding: 0 30px;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.btn i {
-    margin-right: 8px;
-}
-
-.btn-primary {
-    background-color: #2196F3;
-    color: white;
-    width: 100%;
-}
-
-.btn-primary:hover {
-    background-color: #1976D2;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-}
-
-.btn-success {
-    background-color: #4CAF50;
-    color: white;
-}
-
-.btn-success:hover {
-    background-color: #45a049;
-}
-
-.btn:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-    transform: none;
-}
-
-/* 전화번호 표시 */
-.phone-display {
-    background-color: #f8f9fa;
-    padding: 15px;
-    border-radius: 8px;
-    text-align: center;
-    font-size: 18px;
-    font-weight: 500;
-    color: #333;
-    margin-bottom: 20px;
-}
-
-/* 메시지 표시 */
-.alert {
-    padding: 12px 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
+/* SMS 단계별 화면 */
+.sms_step {
     display: none;
 }
 
-.alert.show {
+.sms_step.active {
     display: block;
 }
 
-.alert-success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+/* 입력 필드 */
+.frm_input_wrap {
+    margin-bottom: 15px;
 }
 
-.alert-error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+.frm_input {
+    width: 100%;
+    height: 50px;
+    padding: 0 15px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 14px;
 }
 
-.alert-info {
-    background-color: #d1ecf1;
-    color: #0c5460;
-    border: 1px solid #bee5eb;
+.frm_input:focus {
+    border-color: #333;
+    outline: none;
 }
 
-/* 타이머 */
-.timer-display {
-    text-align: center;
-    color: #f44336;
+/* 버튼 스타일 */
+.btn_submit {
+    height: 50px;
+    padding: 0 30px;
+    background: #333;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
     font-size: 16px;
-    font-weight: 500;
-    margin-top: 10px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
 }
 
-/* 인증 완료 */
-.success-container {
+.btn_submit:hover {
+    background: #555;
+}
+
+.btn_submit.full {
+    width: 100%;
+}
+
+.btn_submit:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+/* 인증번호 화면 */
+.verify_info {
     text-align: center;
-    padding: 40px;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #fff;
+    border-radius: 5px;
 }
 
-.success-icon {
-    width: 80px;
-    height: 80px;
-    background-color: #4CAF50;
-    border-radius: 50%;
-    display: inline-flex;
+.phone_info {
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.phone_info strong {
+    color: #333;
+    font-size: 18px;
+}
+
+.time_info {
+    color: #666;
+    font-size: 14px;
+}
+
+.timer_text {
+    color: #ff0000;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+/* 도움말 버튼 */
+.verify_help {
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #ddd;
+}
+
+.btn_text {
+    background: none;
+    border: none;
+    color: #666;
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 14px;
+    margin: 0 10px;
+}
+
+.btn_text:hover {
+    color: #333;
+}
+
+/* 본인인증 버튼 */
+.cert_btn_list {
+    margin-top: 20px;
+}
+
+.btn_cert {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 50px;
+    margin-bottom: 10px;
+    padding: 0 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn_cert:hover {
+    background: #f5f5f5;
+    border-color: #333;
+}
+
+.cert_icon {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    margin-right: 10px;
+    background-size: contain;
+}
+
+/* 캡차 */
+#captcha {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    text-align: center;
+}
+
+/* 하단 버튼 */
+.win_btn {
+    margin-top: 30px;
+    text-align: center;
+}
+
+.btn_close {
+    display: inline-block;
+    padding: 10px 30px;
+    background: #666;
+    color: #fff;
+    border-radius: 3px;
+    text-decoration: none;
+}
+
+.btn_close:hover {
+    background: #555;
+}
+
+/* 로딩 오버레이 */
+#loading_overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 20px;
 }
 
-.success-icon i {
-    font-size: 40px;
-    color: white;
-}
-
-/* 로딩 */
-.loading {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 3px solid #f3f3f3;
-    border-top: 3px solid #2196F3;
+.loading_spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #333;
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin-right: 10px;
 }
 
 @keyframes spin {
@@ -271,419 +446,357 @@ $use_sms_auth = $sms_config && $sms_config['cf_use_password'];
     100% { transform: rotate(360deg); }
 }
 
-/* 반응형 */
-@media (max-width: 640px) {
-    .password-lost-wrap {
-        margin: 20px;
-        padding: 0;
-    }
-    
-    .step-content {
-        padding: 20px;
-    }
-    
-    .step-label {
-        font-size: 11px;
-    }
+/* 알림 메시지 */
+.alert_msg {
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 3px;
+    text-align: center;
+}
+
+.alert_msg.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.alert_msg.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
 }
 </style>
 
-<?php if($use_sms_auth) { ?>
-<!-- ===================================
- * 비밀번호 찾기 폼 (SMS 인증 포함)
- * =================================== -->
-<div class="password-lost-wrap">
-    <!-- 단계 표시 -->
-    <div class="step-indicator">
-        <div class="step-item active" id="stepItem1">
-            <div class="step-number">1</div>
-            <div class="step-label">정보 입력</div>
-        </div>
-        <div class="step-item" id="stepItem2">
-            <div class="step-number">2</div>
-            <div class="step-label">SMS 인증</div>
-        </div>
-        <div class="step-item" id="stepItem3">
-            <div class="step-number">3</div>
-            <div class="step-label">완료</div>
-        </div>
-    </div>
-    
-    <form name="fpasswordlost" action="<?php echo $action_url ?>" onsubmit="return fpasswordlost_submit(this);" method="post" autocomplete="off">
-    
-    <!-- 1단계: 회원정보 입력 -->
-    <div class="step-content" id="step1">
-        <h3><i class="fa fa-user"></i> 회원정보 입력</h3>
-        
-        <div class="alert alert-info show">
-            <i class="fa fa-info-circle"></i> 회원가입 시 등록한 정보를 입력해주세요.
-        </div>
-        
-        <div class="form-group">
-            <label for="mb_id">아이디</label>
-            <input type="text" name="mb_id" id="mb_id" required class="form-control" placeholder="아이디를 입력하세요">
-        </div>
-        
-        <div class="form-group">
-            <label for="mb_hp_input">휴대폰번호</label>
-            <input type="tel" id="mb_hp_input" required class="form-control" maxlength="11" placeholder="'-' 없이 숫자만 입력">
-        </div>
-        
-        <div class="alert" id="step1Message"></div>
-        
-        <button type="button" class="btn btn-primary" id="btnCheckMember">
-            <i class="fa fa-arrow-right"></i> 다음 단계
-        </button>
-    </div>
-    
-    <!-- 2단계: SMS 인증 -->
-    <div class="step-content" id="step2" style="display: none;">
-        <h3><i class="fa fa-mobile"></i> SMS 인증</h3>
-        
-        <div class="phone-display" id="phoneDisplay"></div>
-        
-        <div class="alert alert-info show">
-            <i class="fa fa-info-circle"></i> 위 번호로 인증번호가 발송됩니다.
-        </div>
-        
-        <button type="button" class="btn btn-primary" id="btnSendAuth" style="margin-bottom: 20px;">
-            <i class="fa fa-paper-plane"></i> 인증번호 발송
-        </button>
-        
-        <div id="authCodeSection" style="display: none;">
-            <div class="form-group">
-                <label for="auth_code">인증번호</label>
-                <input type="text" id="auth_code" class="form-control" maxlength="6" placeholder="인증번호 6자리">
-            </div>
-            
-            <div class="timer-display" id="authTimer"></div>
-            
-            <button type="button" class="btn btn-success" id="btnVerifyAuth" style="width: 100%;">
-                <i class="fa fa-check"></i> 인증 확인
-            </button>
-        </div>
-        
-        <div class="alert" id="step2Message"></div>
-    </div>
-    
-    <!-- 3단계: 인증 완료 -->
-    <div class="step-content" id="step3" style="display: none;">
-        <div class="success-container">
-            <div class="success-icon">
-                <i class="fa fa-check"></i>
-            </div>
-            <h3>인증이 완료되었습니다!</h3>
-            <p style="margin: 20px 0; color: #666;">
-                회원님의 이메일로 비밀번호 재설정 링크가 발송됩니다.
-            </p>
-            <button type="submit" class="btn btn-primary">
-                <i class="fa fa-envelope"></i> 비밀번호 재설정 메일 발송
-            </button>
-        </div>
-    </div>
-    
-    <!-- Hidden Fields -->
-    <input type="hidden" name="sms_verified" id="smsVerified" value="0">
-    <input type="hidden" name="verified_mb_id" id="verifiedMbId" value="">
-    <input type="hidden" name="verified_phone" id="verifiedPhone" value="">
-    
-    </form>
-</div>
-
-<!-- ===================================
- * SMS 인증 JavaScript
- * =================================== -->
 <script>
+var g5_bbs_url = "<?php echo G5_BBS_URL ?>";
+var sms_timer = null;
+var time_left = 0;
+
 $(function() {
-    var authTimer = null;
-    var timeLeft = 0;
-    var memberInfo = null;
-    
-    // 휴대폰 번호 입력 시 숫자만
-    $('#mb_hp_input').on('input', function() {
-        $(this).val($(this).val().replace(/[^0-9]/g, ''));
+    // 탭 전환
+    $('.find_method_tabs a').click(function(e) {
+        e.preventDefault();
+        var target = $(this).attr('href');
+        
+        $('.find_method_tabs li').removeClass('active');
+        $(this).parent().addClass('active');
+        
+        $('.find_method').removeClass('active');
+        $(target).addClass('active');
     });
     
-    // 인증번호 입력 시 숫자만
+    // 휴대폰 번호 자동 포맷
+    $('#mb_hp').on('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '');
+    });
+    
+    // 인증번호 입력 제한
     $('#auth_code').on('input', function() {
-        $(this).val($(this).val().replace(/[^0-9]/g, ''));
+        this.value = this.value.replace(/[^0-9]/g, '');
     });
     
-    // 1단계: 회원정보 확인
-    $('#btnCheckMember').on('click', function() {
-        var mb_id = $('#mb_id').val();
-        var mb_hp = $('#mb_hp_input').val();
+    <?php if($use_sms) { ?>
+    // SMS 인증번호 발송
+    $('#btn_send_sms').click(function() {
+        var hp = $('#mb_hp').val();
         
-        if(!mb_id) {
-            showMessage('step1Message', '아이디를 입력해주세요.', 'error');
-            $('#mb_id').focus();
+        if(!hp) {
+            alert('휴대폰 번호를 입력해주세요.');
+            $('#mb_hp').focus();
             return;
         }
         
-        if(!mb_hp) {
-            showMessage('step1Message', '휴대폰 번호를 입력해주세요.', 'error');
-            $('#mb_hp_input').focus();
+        if(!/^01[0-9]{8,9}$/.test(hp)) {
+            alert('올바른 휴대폰 번호를 입력해주세요.');
+            $('#mb_hp').focus();
             return;
         }
         
-        if(!/^01[016789][0-9]{7,8}$/.test(mb_hp)) {
-            showMessage('step1Message', '올바른 휴대폰 번호 형식이 아닙니다.', 'error');
-            $('#mb_hp_input').focus();
-            return;
-        }
-        
-        var $btn = $(this);
-        $btn.prop('disabled', true).html('<span class="loading"></span> 확인중...');
-        
-        // 회원정보 저장
-        memberInfo = {
-            mb_id: mb_id,
-            mb_hp: mb_hp
-        };
-        
-        // 실제로는 서버에서 회원 확인을 해야 하지만, 여기서는 2단계로 진행
-        setTimeout(function() {
-            // 단계 이동
-            $('#step1').fadeOut(300, function() {
-                $('#step2').fadeIn(300);
-                $('#stepItem1').removeClass('active').addClass('completed');
-                $('#stepItem2').addClass('active');
-                $('#phoneDisplay').text(formatPhone(mb_hp));
-            });
-        }, 500);
-    });
-    
-    // 2단계: 인증번호 발송
-    $('#btnSendAuth').on('click', function() {
-        var $btn = $(this);
-        $btn.prop('disabled', true).html('<span class="loading"></span> 발송중...');
+        showLoading();
         
         $.ajax({
-            url: g5_bbs_url + '/sms_send.php',
+            url: g5_bbs_url + '/ajax.sms_send.php',
             type: 'POST',
             data: {
-                phone: memberInfo.mb_hp,
-                type: 'password',
-                mb_id: memberInfo.mb_id,
-                captcha_key: $('#captcha_key').val() || ''
+                'type': 'password',
+                'mb_hp': hp
             },
             dataType: 'json',
             success: function(response) {
+                hideLoading();
+                
+                if(response.error) {
+                    alert(response.error);
+                    return;
+                }
+                
                 if(response.success) {
-                    showMessage('step2Message', response.message, 'success');
-                    
-                    // 인증번호 입력 영역 표시
-                    $('#authCodeSection').slideDown();
-                    $('#auth_code').val('').focus();
+                    $('#mb_hp_verify').val(hp);
+                    $('#phone_display').text(formatPhone(hp));
                     
                     // 타이머 시작
                     startTimer(response.timeout || 180);
                     
-                    // 버튼 변경
-                    $btn.html('<i class="fa fa-refresh"></i> 재발송');
-                } else {
-                    showMessage('step2Message', response.message, 'error');
+                    // 단계 전환
+                    $('#sms_step1').removeClass('active');
+                    $('#sms_step2').addClass('active');
                     
-                    // 캡차가 필요한 경우
-                    if(response.need_captcha && typeof load_captcha === 'function') {
-                        load_captcha();
-                    }
+                    showMessage('인증번호가 발송되었습니다.', 'success');
                 }
             },
             error: function() {
-                showMessage('step2Message', '통신 오류가 발생했습니다.', 'error');
-            },
-            complete: function() {
-                $btn.prop('disabled', false);
+                hideLoading();
+                alert('통신 오류가 발생했습니다. 다시 시도해주세요.');
             }
         });
     });
     
     // 인증번호 확인
-    $('#btnVerifyAuth').on('click', function() {
-        var auth_code = $('#auth_code').val();
+    $('#btn_verify_sms').click(function() {
+        var hp = $('#mb_hp_verify').val();
+        var code = $('#auth_code').val();
         
-        if(!auth_code) {
-            showMessage('step2Message', '인증번호를 입력해주세요.', 'error');
+        if(!code) {
+            alert('인증번호를 입력해주세요.');
             $('#auth_code').focus();
             return;
         }
         
-        if(!/^[0-9]{6}$/.test(auth_code)) {
-            showMessage('step2Message', '인증번호는 6자리 숫자입니다.', 'error');
+        if(code.length !== 6) {
+            alert('인증번호 6자리를 입력해주세요.');
             $('#auth_code').focus();
             return;
         }
         
-        var $btn = $(this);
-        $btn.prop('disabled', true).html('<span class="loading"></span> 확인중...');
+        showLoading();
         
         $.ajax({
-            url: g5_bbs_url + '/sms_verify.php',
+            url: g5_bbs_url + '/ajax.sms_verify.php',
             type: 'POST',
             data: {
-                phone: memberInfo.mb_hp,
-                auth_code: auth_code,
-                type: 'password'
+                'type': 'password',
+                'mb_hp': hp,
+                'auth_code': code
             },
             dataType: 'json',
             success: function(response) {
-                if(response.success) {
+                hideLoading();
+                
+                if(response.error) {
+                    alert(response.error);
+                    return;
+                }
+                
+                if(response.verified) {
                     // 타이머 정지
-                    stopTimer();
+                    if(sms_timer) {
+                        clearInterval(sms_timer);
+                    }
                     
-                    // 인증 완료 처리
-                    $('#smsVerified').val('1');
-                    $('#verifiedMbId').val(memberInfo.mb_id);
-                    $('#verifiedPhone').val(memberInfo.mb_hp);
+                    // 회원 정보 표시
+                    $('#user_mb_id').text(response.mb_id);
+                    $('#reset_mb_id').val(response.mb_id);
+                    $('#reset_token').val(response.token);
                     
-                    // 3단계로 이동
-                    $('#step2').fadeOut(300, function() {
-                        $('#step3').fadeIn(300);
-                        $('#stepItem2').removeClass('active').addClass('completed');
-                        $('#stepItem3').addClass('active');
-                    });
-                } else {
-                    showMessage('step2Message', response.message, 'error');
-                    $('#auth_code').focus();
+                    // 단계 전환
+                    $('#sms_step2').removeClass('active');
+                    $('#sms_step3').addClass('active');
+                    
+                    showMessage('인증이 완료되었습니다.', 'success');
                 }
             },
             error: function() {
-                showMessage('step2Message', '통신 오류가 발생했습니다.', 'error');
-            },
-            complete: function() {
-                $btn.prop('disabled', false).html('<i class="fa fa-check"></i> 인증 확인');
+                hideLoading();
+                alert('통신 오류가 발생했습니다. 다시 시도해주세요.');
             }
         });
     });
     
-    // 엔터키 처리
-    $('#mb_id, #mb_hp_input').on('keypress', function(e) {
-        if(e.which == 13) {
-            $('#btnCheckMember').click();
-            return false;
-        }
-    });
-    
-    $('#auth_code').on('keypress', function(e) {
-        if(e.which == 13) {
-            $('#btnVerifyAuth').click();
-            return false;
-        }
-    });
-    
-    // 메시지 표시
-    function showMessage(elementId, message, type) {
-        $('#' + elementId)
-            .removeClass('alert-success alert-error show')
-            .addClass('alert-' + type + ' show')
-            .html('<i class="fa fa-' + (type == 'success' ? 'check' : 'exclamation') + '-circle"></i> ' + message);
+    // 비밀번호 재설정
+    $('#btn_reset_password').click(function() {
+        var mb_id = $('#reset_mb_id').val();
+        var token = $('#reset_token').val();
+        var pw1 = $('#mb_password_new').val();
+        var pw2 = $('#mb_password_re').val();
         
-        // 5초 후 숨김
-        setTimeout(function() {
-            $('#' + elementId).removeClass('show');
-        }, 5000);
-    }
-    
-    // 전화번호 포맷
-    function formatPhone(phone) {
-        if(phone.length == 11) {
-            return phone.substr(0,3) + '-' + phone.substr(3,4) + '-' + phone.substr(7);
-        } else if(phone.length == 10) {
-            return phone.substr(0,3) + '-' + phone.substr(3,3) + '-' + phone.substr(6);
+        if(!pw1 || !pw2) {
+            alert('새 비밀번호를 입력해주세요.');
+            return;
         }
-        return phone;
-    }
+        
+        if(pw1 !== pw2) {
+            alert('비밀번호가 일치하지 않습니다.');
+            $('#mb_password_re').focus();
+            return;
+        }
+        
+        if(pw1.length < 4) {
+            alert('비밀번호는 4자 이상 입력해주세요.');
+            $('#mb_password_new').focus();
+            return;
+        }
+        
+        showLoading();
+        
+        $.ajax({
+            url: g5_bbs_url + '/ajax.password_reset.php',
+            type: 'POST',
+            data: {
+                'mb_id': mb_id,
+                'token': token,
+                'mb_password': pw1,
+                'mb_password_re': pw2
+            },
+            dataType: 'json',
+            success: function(response) {
+                hideLoading();
+                
+                if(response.error) {
+                    alert(response.error);
+                    return;
+                }
+                
+                if(response.success) {
+                    alert('비밀번호가 변경되었습니다.\n\n새로운 비밀번호로 로그인해주세요.');
+                    location.href = g5_bbs_url + '/login.php';
+                }
+            },
+            error: function() {
+                hideLoading();
+                alert('통신 오류가 발생했습니다. 다시 시도해주세요.');
+            }
+        });
+    });
     
-    // 타이머 시작
-    function startTimer(seconds) {
-        stopTimer();
-        timeLeft = seconds;
+    // 인증번호 재발송
+    $('#btn_resend_sms').click(function() {
+        if(confirm('인증번호를 재발송하시겠습니까?')) {
+            var hp = $('#mb_hp_verify').val();
+            $('#mb_hp').val(hp);
+            $('#btn_send_sms').click();
+        }
+    });
+    
+    // 휴대폰 번호 변경
+    $('#btn_change_phone').click(function() {
+        if(confirm('휴대폰 번호를 변경하시겠습니까?')) {
+            // 타이머 정지
+            if(sms_timer) {
+                clearInterval(sms_timer);
+            }
+            
+            // 단계 전환
+            $('#sms_step2').removeClass('active');
+            $('#sms_step1').addClass('active');
+            
+            // 입력값 초기화
+            $('#auth_code').val('');
+        }
+    });
+    <?php } ?>
+    
+    <?php if($config['cf_cert_use'] && $config['cf_cert_simple']) { ?>
+    // 카카오 간편인증
+    $("#win_sa_kakao_cert").click(function() {
+        certify_win_open('sa-kakao', '<?php echo G5_OKNAME_URL; ?>/sa_kakao_cert.php');
+    });
+    <?php } ?>
+    
+    <?php if($config['cf_cert_use'] && $config['cf_cert_ipin']) { ?>
+    // 아이핀 인증
+    $("#win_ipin_cert").click(function() {
+        certify_win_open('kcb-ipin', '<?php echo G5_OKNAME_URL; ?>/ipin1.php');
+    });
+    <?php } ?>
+    
+    <?php if($config['cf_cert_use'] && $config['cf_cert_hp']) { ?>
+    // 휴대폰 인증
+    $("#win_hp_cert").click(function() {
+        <?php
+        switch($config['cf_cert_hp']) {
+            case 'kcb':
+                $cert_url = G5_OKNAME_URL.'/hpcert1.php';
+                $cert_type = 'kcb-hp';
+                break;
+            case 'kcp':
+                $cert_url = G5_KCPCERT_URL.'/kcpcert_form.php';
+                $cert_type = 'kcp-hp';
+                break;
+            case 'lg':
+                $cert_url = G5_LGXPAY_URL.'/AuthOnlyReq.php';
+                $cert_type = 'lg-hp';
+                break;
+            default:
+                echo 'alert("기본환경설정에서 휴대폰 본인확인 설정을 해주십시오");';
+                echo 'return false;';
+                break;
+        }
+        ?>
+        certify_win_open('<?php echo $cert_type; ?>', '<?php echo $cert_url; ?>');
+    });
+    <?php } ?>
+});
+
+// 타이머 시작
+function startTimer(seconds) {
+    time_left = seconds;
+    updateTimer();
+    
+    sms_timer = setInterval(function() {
+        time_left--;
         updateTimer();
         
-        authTimer = setInterval(function() {
-            timeLeft--;
-            if(timeLeft <= 0) {
-                stopTimer();
-                showMessage('step2Message', '인증시간이 만료되었습니다.', 'error');
-                $('#btnVerifyAuth').prop('disabled', true);
-            } else {
-                updateTimer();
-            }
-        }, 1000);
-    }
-    
-    // 타이머 정지
-    function stopTimer() {
-        if(authTimer) {
-            clearInterval(authTimer);
-            authTimer = null;
+        if(time_left <= 0) {
+            clearInterval(sms_timer);
+            alert('인증 시간이 만료되었습니다.\n다시 시도해주세요.');
+            $('#btn_change_phone').click();
         }
-        $('#authTimer').text('');
-    }
-    
-    // 타이머 업데이트
-    function updateTimer() {
-        var minutes = Math.floor(timeLeft / 60);
-        var seconds = timeLeft % 60;
-        var display = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-        $('#authTimer').html('<i class="fa fa-clock-o"></i> 남은시간: ' + display);
-    }
-    
-    // 폼 전송 전 확인
-    function fpasswordlost_submit(f) {
-        if($('#smsVerified').val() != '1') {
-            alert('SMS 인증을 완료해주세요.');
-            return false;
-        }
-        
-        // 실제 아이디 값 설정
-        f.mb_id.value = $('#verifiedMbId').val();
-        
-        return true;
-    }
-});
-</script>
-
-<?php } else { ?>
-<!-- ===================================
- * SMS 인증을 사용하지 않는 경우 (기존 코드)
- * =================================== -->
-<div class="mbskin">
-    <h1><?php echo $g5['title'] ?></h1>
-    
-    <form name="fpasswordlost" action="<?php echo $action_url ?>" onsubmit="return fpasswordlost_submit(this);" method="post" autocomplete="off">
-    
-    <p>
-        회원가입 시 등록하신 이메일 주소를 입력해 주세요.<br>
-        해당 이메일로 비밀번호를 재설정하는 방법이 안내됩니다.
-    </p>
-    
-    <label for="mb_email" class="sound_only">E-mail 주소<strong class="sound_only">필수</strong></label>
-    <input type="text" name="mb_email" id="mb_email" required class="required frm_input email" size="30" placeholder="E-mail 주소">
-    
-    <?php echo captcha_html(); ?>
-    
-    <input type="submit" value="확인" class="btn_submit">
-    
-    </form>
-</div>
-
-<script>
-function fpasswordlost_submit(f) {
-    <?php echo chk_captcha_js(); ?>
-    
-    return true;
+    }, 1000);
 }
 
-$(function() {
-    var sw = screen.width;
-    var sh = screen.height;
-    var cw = document.body.clientWidth;
-    var ch = document.body.clientHeight;
-    var top  = sh / 2 - ch / 2 - 100;
-    var left = sw / 2 - cw / 2;
-    moveTo(left, top);
-});
+// 타이머 업데이트
+function updateTimer() {
+    var minutes = Math.floor(time_left / 60);
+    var seconds = time_left % 60;
+    var display = (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+    $('#timer').text(display);
+}
+
+// 전화번호 포맷
+function formatPhone(phone) {
+    if(phone.length == 11) {
+        return phone.substr(0, 3) + '-' + phone.substr(3, 4) + '-' + phone.substr(7);
+    } else if(phone.length == 10) {
+        return phone.substr(0, 3) + '-' + phone.substr(3, 3) + '-' + phone.substr(6);
+    }
+    return phone;
+}
+
+// 로딩 표시
+function showLoading() {
+    $('#loading_overlay').show();
+}
+
+// 로딩 숨김
+function hideLoading() {
+    $('#loading_overlay').hide();
+}
+
+// 메시지 표시
+function showMessage(msg, type) {
+    var html = '<div class="alert_msg ' + type + '">' + msg + '</div>';
+    $('.sms_step.active .info_text').after(html);
+    
+    setTimeout(function() {
+        $('.alert_msg').fadeOut(function() {
+            $(this).remove();
+        });
+    }, 3000);
+}
+
+function fpasswordlost_submit(f) {
+    <?php echo chk_captcha_js(); ?>
+    return true;
+}
 </script>
-<?php } ?>
+<!-- } 회원정보 찾기 끝 -->

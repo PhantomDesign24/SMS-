@@ -144,7 +144,14 @@ if($sms['cf_service'] == 'icode') {
                 <span class="frm_info">알리고 로그인 아이디</span>
             </td>
         </tr>
-        
+		<tr class="service_icode" style="display:none">
+			<th scope="row"><label for="cf_icode_id">아이코드 ID</label></th>
+			<td><input type="text" name="cf_icode_id" value="<?php echo $sms['cf_icode_id']; ?>" id="cf_icode_id" class="frm_input" size="30"></td>
+		</tr>
+		<tr class="service_icode" style="display:none">
+			<th scope="row"><label for="cf_icode_pw">아이코드 비밀번호</label></th>
+			<td><input type="password" name="cf_icode_pw" value="<?php echo $sms['cf_icode_pw']; ?>" id="cf_icode_pw" class="frm_input" size="30"></td>
+		</tr>
         <tr>
             <th scope="row"><label for="cf_phone">발신번호 <strong class="sound_only">필수</strong></label></th>
             <td>
@@ -168,6 +175,13 @@ if($sms['cf_service'] == 'icode') {
             <col>
         </colgroup>
         <tbody>
+		<tr>
+			<th scope="row">SMS 사용</th>
+			<td>
+				<label><input type="checkbox" name="cf_use_sms" value="1" <?php echo $sms['cf_use_sms'] ? 'checked' : ''; ?>> SMS 인증 기능 사용</label>
+				<p class="info">체크하면 SMS 인증 기능을 사용합니다.</p>
+			</td>
+		</tr>
         <tr>
             <th scope="row">회원가입 SMS 인증</th>
             <td>
