@@ -1,0 +1,138 @@
+=== SMS 발송 디버그 로그 ===
+시간: 2025-06-25 15:48:52
+수신번호: 01080136380
+발신번호: 023815552
+Send() 결과: true
+success_cnt: not set
+fail_cnt: not set
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+Error: not set
+errMsg: not set
+rMsg: not set
+coin: not set
+============================
+
+=== SMS 발송 디버그 로그 ===
+시간: 2025-06-25 15:48:58
+수신번호: 01080136380
+발신번호: 023815552
+Send() 결과: true
+success_cnt: not set
+fail_cnt: not set
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+Error: not set
+errMsg: not set
+rMsg: not set
+coin: not set
+============================
+
+=== SMS 발송 디버그 로그 ===
+시간: 2025-06-25 16:17:45
+수신번호: 01080136380
+발신번호: 023815552
+Send() 결과: true
+success_cnt: not set
+fail_cnt: not set
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+Error: not set
+errMsg: not set
+rMsg: not set
+coin: not set
+============================
+
+=== SMS 발송 디버그 로그 ===
+시간: 2025-06-25 16:17:52
+수신번호: 01080136380
+발신번호: 023815552
+Send() 결과: true
+success_cnt: not set
+fail_cnt: not set
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+Error: not set
+errMsg: not set
+rMsg: not set
+coin: not set
+============================
+
+=== SMS 발송 디버그 로그 ===
+시간: 2025-06-25 16:17:52
+수신번호: 01080136380
+발신번호: 023815552
+Send() 결과: true
+success_cnt: not set
+fail_cnt: not set
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+Error: not set
+errMsg: not set
+rMsg: not set
+coin: not set
+============================
+
+=== SMS 발송 시도 ===
+시간: 2025-06-25 16:23:19
+아이디: ipcland
+서버: 211.172.232.124:7295
+수신: 01080136380
+발신: 023815552
+메시지: [그누보드5] 비밀번호 찾기 인증번호는 415413 입니다.
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+success_cnt: 0
+fail_cnt: 0
+============================
+
+=== SMS 발송 시도 ===
+시간: 2025-06-25 16:30:37
+아이디: ipcland
+서버: 211.172.232.124:7295
+수신: 01080136380
+발신: 023815552
+메시지: [그누보드5] 비밀번호 찾기 인증번호는 291923 입니다.
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+success_cnt: 0
+fail_cnt: 0
+============================
+
+=== SMS 발송 시도 ===
+시간: 2025-06-25 16:30:43
+아이디: ipcland
+서버: 211.172.232.124:7295
+수신: 01080136380
+발신: 023815552
+메시지: [그누보드5] 비밀번호 찾기 인증번호는 573206 입니다.
+Result: Array
+(
+    [01080136380] => 01080136380:Error(96)
+)
+
+success_cnt: 0
+fail_cnt: 0
+============================
+

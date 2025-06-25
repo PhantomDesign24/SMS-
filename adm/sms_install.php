@@ -7,13 +7,13 @@
  * 수정일: 2024-12-29
  */
 
+$sub_menu = "900000";
 include_once('./_common.php');
-include_once(G5_PATH.'/head.sub.php');
 
-// 관리자만 접근 가능
-if(!$is_admin) {
-    alert('관리자만 접근 가능합니다.', G5_URL);
-}
+auth_check($auth[$sub_menu], 'r');
+
+$g5['title'] = 'SMS 인증 시스템 설치';
+include_once('./admin.head.php');
 ?>
 
 <style>
@@ -364,5 +364,5 @@ if($_GET['step'] == 'install') {
 </div>
 
 <?php
-include_once(G5_PATH.'/tail.sub.php');
+include_once('./admin.tail.php');
 ?>

@@ -4,7 +4,7 @@
  * 위치: /extend/sms_config.php
  * 기능: SMS 인증 시스템 공통 함수 및 설정
  * 작성일: 2024-12-28
- * 수정일: 2024-12-29 (설정값 로드 수정)
+ * 수정일: 2024-12-29 (설정값 로드 및 잔액 조회 수정)
  */
 
 if (!defined('_GNUBOARD_')) exit;
@@ -24,11 +24,14 @@ if($table_exists) {
     if($result && $row = sql_fetch_array($result)) {
         $g5_sms_config = $row;
         
-        // 기본값 설정 (DB에 값이 없는 경우)
-        $g5_sms_config['cf_use_sms'] = isset($row['cf_use_sms']) ? $row['cf_use_sms'] : 0;
-        $g5_sms_config['cf_use_register'] = isset($row['cf_use_register']) ? $row['cf_use_register'] : 0;
-        $g5_sms_config['cf_use_password'] = isset($row['cf_use_password']) ? $row['cf_use_password'] : 0;
-        $g5_sms_config['cf_find_use'] = isset($row['cf_use_password']) ? $row['cf_use_password'] : 0; // cf_find_use는 cf_use_password와 동일
+        // cf_use_sms 필드가 없는 경우를 위한 처리
+        if(!isset($g5_sms_config['cf_use_sms'])) {
+            // cf_use_register 또는 cf_use_password가 1이면 SMS 사용으로 간주
+            $g5_sms_config['cf_use_sms'] = ($row['cf_use_register'] || $row['cf_use_password']) ? 1 : 0;
+        }
+        
+        // cf_find_use는 cf_use_password와 동일
+        $g5_sms_config['cf_find_use'] = $row['cf_use_password'];
     }
 }
 
@@ -403,20 +406,40 @@ function send_sms($phone, $message, $type = 'etc') {
         // 그누보드5 기본 SMS 기능 사용
         $sms_send_result = false;
         
-        // 1. SMS5 플러그인 확인 (최신)
+        // 1. SMS5 플러그인 확인
         if(defined('G5_SMS5_USE') && G5_SMS5_USE && file_exists(G5_PLUGIN_PATH.'/sms5/sms5.lib.php')) {
             include_once(G5_PLUGIN_PATH.'/sms5/sms5.lib.php');
             
             $sms5 = new SMS5;
-            $send_hp = $g5_sms_config['cf_phone'];
-            $recv_hp = $phone;
             
-            // SMS5 발송
-            $sms5->send($send_hp, $recv_hp, $message);
+            // 토큰키 설정 확인
+            if(isset($config['cf_icode_token_key']) && $config['cf_icode_token_key']) {
+                $sms5->icode_key = $config['cf_icode_token_key'];
+                $sms5->socket_host = '211.233.85.196';  // JSON API 서버
+                $sms5->socket_port = 9201;               // JSON API 포트 (수정됨)
+            }
             
-            if($sms5->result == 1) {
-                $result['success'] = true;
-                $result['message'] = '발송 성공';
+            $sms5->Init();
+            
+            $send_hp = preg_replace('/[^0-9]/', '', $g5_sms_config['cf_phone']);
+            $recv_hp = preg_replace('/[^0-9]/', '', $phone);
+            
+            // SMS5 발송 (Add2 메서드 사용)
+            $strDest = array();
+            $strDest[] = array('bk_hp' => $recv_hp);
+            
+            $sms5->Add2($strDest, $send_hp, '', '', $message, '', 1);
+            $sms5->Send();
+            
+            if(count($sms5->Result) > 0) {
+                $res = $sms5->Result[0];
+                if(strpos($res, 'Error') === false) {
+                    $result['success'] = true;
+                    $result['message'] = '발송 성공';
+                } else {
+                    $result['success'] = false;
+                    $result['message'] = '발송 실패: ' . $res;
+                }
             } else {
                 $result['success'] = false;
                 $result['message'] = '발송 실패';
@@ -427,36 +450,103 @@ function send_sms($phone, $message, $type = 'etc') {
         else if(file_exists(G5_LIB_PATH.'/icode.sms.lib.php')) {
             include_once(G5_LIB_PATH.'/icode.sms.lib.php');
             
-            // 아이코드 설정 확인 (기본 설정 우선, 없으면 SMS 인증 설정 사용)
-            $icode_id = $config['cf_icode_id'] ? $config['cf_icode_id'] : $g5_sms_config['cf_icode_id'];
-            $icode_pw = $config['cf_icode_pw'] ? $config['cf_icode_pw'] : $g5_sms_config['cf_icode_pw'];
-            $icode_server_ip = $config['cf_icode_server_ip'] ? $config['cf_icode_server_ip'] : '211.172.232.124';
-            $icode_server_port = $config['cf_icode_server_port'] ? $config['cf_icode_server_port'] : '7295';
+            // 아이코드 설정 확인
+            $icode_id = '';
+            $icode_pw = '';
+            $icode_server_ip = '211.172.232.124';
+            $icode_server_port = 7295;
+            
+            // 1순위: 그누보드 기본 설정
+            if(!empty($config['cf_icode_id']) && !empty($config['cf_icode_pw'])) {
+                $icode_id = $config['cf_icode_id'];
+                $icode_pw = $config['cf_icode_pw'];
+                if(!empty($config['cf_icode_server_ip'])) {
+                    $icode_server_ip = $config['cf_icode_server_ip'];
+                }
+                if(!empty($config['cf_icode_server_port'])) {
+                    $icode_server_port = (int)$config['cf_icode_server_port'];
+                }
+            }
+            // 2순위: SMS 인증 설정
+            else if(!empty($g5_sms_config['cf_icode_id']) && !empty($g5_sms_config['cf_icode_pw'])) {
+                $icode_id = $g5_sms_config['cf_icode_id'];
+                $icode_pw = $g5_sms_config['cf_icode_pw'];
+            }
             
             if(!$icode_id || !$icode_pw) {
                 $result['message'] = '아이코드 설정이 되어있지 않습니다.';
                 return $result;
             }
             
-            $SMS = new SMS;
-            $SMS->SMS_con($icode_server_ip, $icode_id, $icode_pw, $icode_server_port);
+            // 발신번호 설정
+            $send_number = $g5_sms_config['cf_phone'];
+            if(!$send_number && isset($config['cf_phone'])) {
+                $send_number = $config['cf_phone']; // 기본 설정에서 가져오기
+            }
+            
+            // SMS5 설정에서도 확인
+            if(!$send_number && isset($sms5) && isset($sms5['cf_phone'])) {
+                $send_number = $sms5['cf_phone'];
+            }
+            
+            if(!$send_number) {
+                $result['message'] = '발신번호가 설정되지 않았습니다.';
+                return $result;
+            }
             
             // 발송
-            $recv_list = $phone;
-			$send_list = $g5_sms_config['cf_phone']; // 배열 아님, 문자로만
-
+            $recv_number = str_replace("-", "", $phone);  // 수신번호 (- 제거)
+            $send_number_formatted = str_replace("-", "", $send_number);  // 발신번호 (- 제거)
             
-            $SMS->Add($recv_list, $send_list, $g5_sms_config['cf_phone'], '', '', $message, '', 1);
-            $SMS->Send();
-            
-            // 결과 확인
-            if($SMS->result) {
-                $result['success'] = true;
-                $result['message'] = '발송 성공';
-            } else {
+            try {
+                $SMS = new SMS;
+                $SMS->SMS_con($icode_server_ip, $icode_id, $icode_pw, $icode_server_port);
+                
+                // 메시지 인코딩
+                $encoded_msg = iconv("utf-8", "euc-kr", stripslashes($message));
+                
+                // Add 메서드 호출
+                $SMS->Add($recv_number, $send_number_formatted, $icode_id, $encoded_msg, "");
+                
+                // Send 전 상태 로그
+                $debug_log = "=== SMS 발송 시도 ===\n";
+                $debug_log .= "시간: " . date('Y-m-d H:i:s') . "\n";
+                $debug_log .= "아이디: " . $icode_id . "\n";
+                $debug_log .= "서버: " . $icode_server_ip . ":" . $icode_server_port . "\n";
+                $debug_log .= "수신: " . $recv_number . "\n";
+                $debug_log .= "발신: " . $send_number_formatted . "\n";
+                $debug_log .= "메시지: " . $message . "\n";
+                
+                // Send 실행
+                $SMS->Send();
+                
+                // 결과 확인
+                $debug_log .= "Result: " . print_r($SMS->Result, true) . "\n";
+                $debug_log .= "success_cnt: " . (isset($SMS->success_cnt) ? $SMS->success_cnt : '0') . "\n";
+                $debug_log .= "fail_cnt: " . (isset($SMS->fail_cnt) ? $SMS->fail_cnt : '0') . "\n";
+                $debug_log .= "============================\n\n";
+                
+                @file_put_contents(G5_DATA_PATH.'/sms_debug.log', $debug_log, FILE_APPEND);
+                
+                // 성공 판단
+                if(isset($SMS->Result) && is_array($SMS->Result)) {
+                    foreach($SMS->Result as $key => $res) {
+                        if(strpos($res, 'Error') === false) {
+                            $result['success'] = true;
+                            $result['message'] = '발송 성공';
+                            break;
+                        }
+                    }
+                } else {
+                    $result['success'] = true;
+                    $result['message'] = '발송 성공';
+                }
+                
+            } catch(Exception $e) {
                 $result['success'] = false;
-                $result['message'] = '발송 실패';
+                $result['message'] = '발송 실패: ' . $e->getMessage();
             }
+            
             $sms_send_result = true;
         }
         
@@ -479,7 +569,7 @@ function send_sms($phone, $message, $type = 'etc') {
     // 발송 로그 기록
     $log_data = array(
         'type' => $type,
-        'mb_id' => $member['mb_id'] ? $member['mb_id'] : '',
+        'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
         'phone' => $phone,
         'message' => $message,
         'result' => $result['success'] ? 'success' : 'fail',
@@ -516,6 +606,58 @@ function need_captcha($phone) {
     }
     
     return false;
+}
+
+/**
+ * SMS 잔액 조회
+ * 
+ * @return array 잔액 정보
+ */
+function get_sms_balance() {
+    global $config, $g5_sms_config;
+    
+    $balance_info = array(
+        'success' => false,
+        'balance' => 0,
+        'message' => ''
+    );
+    
+    if($g5_sms_config['cf_service'] == 'icode') {
+        // 아이코드 사용
+        if($config['cf_sms_use'] == 'icode' && $config['cf_icode_id'] && $config['cf_icode_pw']) {
+            // get_icode_userinfo 함수 사용
+            if(function_exists('get_icode_userinfo')) {
+                $userinfo = get_icode_userinfo($config['cf_icode_id'], $config['cf_icode_pw']);
+                
+                if($userinfo && isset($userinfo['coin'])) {
+                    $balance_info['success'] = true;
+                    $balance_info['balance'] = floor($userinfo['coin'] / 16); // 16원당 1건
+                    $balance_info['message'] = '잔액 조회 성공';
+                } else {
+                    $balance_info['message'] = '아이코드 잔액 조회 실패';
+                }
+            } else {
+                $balance_info['message'] = 'get_icode_userinfo 함수가 없습니다.';
+            }
+        } else {
+            $balance_info['message'] = '아이코드 설정이 필요합니다.';
+        }
+    } else if($g5_sms_config['cf_service'] == 'aligo') {
+        // 알리고 사용
+        if($g5_sms_config['cf_aligo_key'] && $g5_sms_config['cf_aligo_userid']) {
+            if(file_exists(G5_PATH.'/plugin/sms/aligo.php')) {
+                include_once(G5_PATH.'/plugin/sms/aligo.php');
+                $sms_api = new aligo_sms($g5_sms_config['cf_aligo_key'], $g5_sms_config['cf_aligo_userid']);
+                $balance_info = $sms_api->get_balance();
+            } else {
+                $balance_info['message'] = '알리고 플러그인이 설치되지 않았습니다.';
+            }
+        } else {
+            $balance_info['message'] = '알리고 설정이 필요합니다.';
+        }
+    }
+    
+    return $balance_info;
 }
 
 // 디버깅용 (임시)
