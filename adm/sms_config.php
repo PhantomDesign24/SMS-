@@ -189,7 +189,7 @@ if($sms['cf_service'] == 'icode') {
             <th scope="row"><label for="cf_phone">발신번호 <strong class="sound_only">필수</strong></label></th>
             <td>
                 <input type="text" name="cf_phone" value="<?php echo isset($sms['cf_phone']) ? $sms['cf_phone'] : ''; ?>" id="cf_phone" required class="required frm_input" size="20">
-                <span class="frm_info">사전 등록된 발신번호 (예: 02-381-5552, 010-1234-5678)</span>
+                <span class="frm_info">사전 등록된 발신번호 (예: 02-123-4567, 010-1234-5678)</span>
             </td>
         </tr>
         </tbody>
@@ -354,7 +354,67 @@ if($sms['cf_service'] == 'icode') {
         </table>
     </div>
 </section>
+<section>
+    <h2 class="h2_frm">비용 설정</h2>
+    
+    <div class="tbl_frm01 tbl_wrap">
+        <table>
+        <caption>SMS 비용 설정</caption>
+        <colgroup>
+            <col class="grid_4">
+            <col>
+        </colgroup>
+        <tbody>
+        <tr>
+            <th scope="row">비용 타입</th>
+            <td>
+                <label for="cf_cost_type_count"><input type="radio" name="cf_cost_type" value="count" id="cf_cost_type_count" <?php echo get_checked($sms['cf_cost_type'] ?? 'count', 'count'); ?> onchange="change_cost_type(this.value)"> 건당 과금</label>
+                <label for="cf_cost_type_monthly"><input type="radio" name="cf_cost_type" value="monthly" id="cf_cost_type_monthly" <?php echo get_checked($sms['cf_cost_type'] ?? 'count', 'monthly'); ?> onchange="change_cost_type(this.value)"> 월 정액제</label>
+            </td>
+        </tr>
+        <tr class="cost_count">
+            <th scope="row"><label for="cf_cost_per_sms">건당 비용</label></th>
+            <td>
+                <input type="number" name="cf_cost_per_sms" value="<?php echo $sms['cf_cost_per_sms'] ?? 0; ?>" id="cf_cost_per_sms" class="frm_input" size="10" min="0" step="0.01"> 원
+                <span class="frm_info">SMS 1건당 비용 (통계 계산용)</span>
+            </td>
+        </tr>
+        <tr class="cost_count">
+            <th scope="row"><label for="cf_remaining_sms">잔여 건수</label></th>
+            <td>
+                <input type="number" name="cf_remaining_sms" value="<?php echo $sms['cf_remaining_sms'] ?? 0; ?>" id="cf_remaining_sms" class="frm_input" size="10" min="0"> 건
+                <span class="frm_info">남은 SMS 건수 (수동 입력)</span>
+            </td>
+        </tr>
+        <tr class="cost_monthly" style="display:none;">
+            <th scope="row"><label for="cf_monthly_cost">월 정액 비용</label></th>
+            <td>
+                <input type="number" name="cf_monthly_cost" value="<?php echo $sms['cf_monthly_cost'] ?? 0; ?>" id="cf_monthly_cost" class="frm_input" size="10" min="0" step="0.01"> 원
+                <span class="frm_info">월 정액제 비용</span>
+            </td>
+        </tr>
+        </tbody>
+        </table>
+    </div>
+</section>
 
+<script>
+// 비용 타입에 따른 표시 제어
+function change_cost_type(type) {
+    if(type == 'monthly') {
+        $('.cost_count').hide();
+        $('.cost_monthly').show();
+    } else {
+        $('.cost_count').show();
+        $('.cost_monthly').hide();
+    }
+}
+
+// 페이지 로드시 초기 설정
+$(function() {
+    change_cost_type('<?php echo $sms['cf_cost_type'] ?? 'count'; ?>');
+});
+</script>
 <div class="btn_fixed_top">
     <a href="./sms_log.php" class="btn btn_02">발송내역</a>
     <a href="./sms_blacklist.php" class="btn btn_02">차단번호</a>

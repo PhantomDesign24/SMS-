@@ -4,7 +4,7 @@
  * 위치: /extend/sms_config.php
  * 기능: SMS 인증 시스템 공통 함수 및 설정
  * 작성일: 2024-12-28
- * 수정일: 2024-12-29 (설정값 로드 및 잔액 조회 수정)
+ * 수정일: 2024-12-29 (상세 로그 기능 추가)
  */
 
 if (!defined('_GNUBOARD_')) exit;
@@ -121,7 +121,7 @@ function is_blacklisted_phone($phone) {
 }
 
 /**
- * 발송 제한 체크
+ * 발송 제한 체크 (상세 로그 포함)
  * 
  * @param string $phone 전화번호
  * @param string $ip IP주소
@@ -134,6 +134,39 @@ function check_sms_limit($phone, $ip) {
     $today = date('Y-m-d');
     $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
     $current_time = $now->format('Y-m-d H:i:s');
+    
+    // 차단 상태 확인 (sl_block_until 필드가 있는 경우)
+    $block_field_exists = sql_fetch("SHOW COLUMNS FROM g5_sms_limit LIKE 'sl_block_until'");
+    if($block_field_exists) {
+        $sql = "SELECT * FROM g5_sms_limit 
+                WHERE sl_phone = '".sql_real_escape_string($phone)."' 
+                AND sl_date = '".sql_real_escape_string($today)."'
+                AND sl_block_until > '".sql_real_escape_string($current_time)."'";
+        $blocked = sql_fetch($sql);
+        
+        if($blocked) {
+            // 차단 시도 로그
+            insert_sms_log(array(
+                'type' => 'blocked',
+                'phone' => $phone,
+                'send_number' => $g5_sms_config['cf_phone'],
+                'message' => '차단된 상태에서 발송 시도',
+                'result' => 'fail',
+                'error_code' => 'TEMP_BLOCKED',
+                'api_response' => json_encode(array(
+                    'block_until' => $blocked['sl_block_until'],
+                    'block_reason' => $blocked['sl_block_reason']
+                )),
+                'ip' => $ip
+            ));
+            
+            return array(
+                'allowed' => false,
+                'message' => '일시적으로 차단된 번호입니다. '.substr($blocked['sl_block_until'], 0, 16).' 이후 재시도하세요.',
+                'code' => 'TEMP_BLOCKED'
+            );
+        }
+    }
     
     // 오늘 발송 정보 조회
     $sql = "SELECT * FROM g5_sms_limit 
@@ -161,8 +194,24 @@ function check_sms_limit($phone, $ip) {
     
     // 일일 발송 제한 체크
     if($limit && $limit['sl_daily_count'] >= $g5_sms_config['cf_daily_limit']) {
+        // 일일 제한 로그
+        insert_sms_log(array(
+            'type' => 'limit',
+            'phone' => $phone,
+            'send_number' => $g5_sms_config['cf_phone'],
+            'message' => '일일 발송 제한 초과',
+            'result' => 'fail',
+            'error_code' => 'DAILY_LIMIT',
+            'api_response' => json_encode(array(
+                'daily_count' => $limit['sl_daily_count'],
+                'daily_limit' => $g5_sms_config['cf_daily_limit']
+            )),
+            'ip' => $ip
+        ));
+        
         $result['allowed'] = false;
         $result['message'] = '일일 발송 한도를 초과했습니다.';
+        $result['code'] = 'DAILY_LIMIT';
         return $result;
     }
     
@@ -172,8 +221,25 @@ function check_sms_limit($phone, $ip) {
         $hourly_diff = $now->getTimestamp() - $last_send->getTimestamp();
         
         if($hourly_diff < 3600 && $limit['sl_hourly_count'] >= $g5_sms_config['cf_hourly_limit']) {
+            // 시간당 제한 로그
+            insert_sms_log(array(
+                'type' => 'limit',
+                'phone' => $phone,
+                'send_number' => $g5_sms_config['cf_phone'],
+                'message' => '시간당 발송 제한 초과',
+                'result' => 'fail',
+                'error_code' => 'HOURLY_LIMIT',
+                'api_response' => json_encode(array(
+                    'hourly_count' => $limit['sl_hourly_count'],
+                    'hourly_limit' => $g5_sms_config['cf_hourly_limit'],
+                    'wait_seconds' => 3600 - $hourly_diff
+                )),
+                'ip' => $ip
+            ));
+            
             $result['allowed'] = false;
             $result['message'] = '시간당 발송 한도를 초과했습니다.';
+            $result['code'] = 'HOURLY_LIMIT';
             return $result;
         }
     }
@@ -240,13 +306,34 @@ function update_sms_limit($phone, $ip) {
 }
 
 /**
- * SMS 발송 로그 기록
+ * SMS 발송 로그 기록 (상세 버전)
  * 
  * @param array $data 로그 데이터
  */
 function insert_sms_log($data) {
     $now = new DateTime('now', new DateTimeZone('Asia/Seoul'));
     $current_time = $now->format('Y-m-d H:i:s');
+    
+    // 기본값 설정
+    $data['type'] = isset($data['type']) ? $data['type'] : 'unknown';
+    $data['mb_id'] = isset($data['mb_id']) ? $data['mb_id'] : '';
+    $data['phone'] = isset($data['phone']) ? $data['phone'] : '';
+    $data['send_number'] = isset($data['send_number']) ? $data['send_number'] : '';
+    $data['message'] = isset($data['message']) ? $data['message'] : '';
+    $data['result'] = isset($data['result']) ? $data['result'] : 'fail';
+    $data['error_code'] = isset($data['error_code']) ? $data['error_code'] : '';
+    $data['api_response'] = isset($data['api_response']) ? $data['api_response'] : '';
+    $data['retry_count'] = isset($data['retry_count']) ? (int)$data['retry_count'] : 0;
+    $data['ip'] = isset($data['ip']) ? $data['ip'] : $_SERVER['REMOTE_ADDR'];
+    $data['send_datetime'] = isset($data['send_datetime']) ? $data['send_datetime'] : null;
+    $data['cost'] = isset($data['cost']) ? $data['cost'] : calculate_sms_cost();
+    
+    // 비밀번호 찾기인 경우 세션에서 회원 ID 확인
+    if($data['type'] == 'password' && !$data['mb_id']) {
+        if(isset($_SESSION['ss_password_mb_id'])) {
+            $data['mb_id'] = $_SESSION['ss_password_mb_id'];
+        }
+    }
     
     $sql = "INSERT INTO g5_sms_log SET
             sl_type = '".sql_real_escape_string($data['type'])."',
@@ -256,6 +343,30 @@ function insert_sms_log($data) {
             sl_result = '".sql_real_escape_string($data['result'])."',
             sl_ip = '".sql_real_escape_string($data['ip'])."',
             sl_datetime = '".sql_real_escape_string($current_time)."'";
+    
+    // 상세 로그 필드 추가 (테이블에 필드가 있는 경우에만)
+    $check_fields = array(
+        'sl_send_number' => $data['send_number'],
+        'sl_error_code' => $data['error_code'],
+        'sl_api_response' => $data['api_response'],
+        'sl_retry_count' => $data['retry_count'],
+        'sl_cost' => $data['cost']
+    );
+    
+    foreach($check_fields as $field => $value) {
+        $field_exists = sql_fetch("SHOW COLUMNS FROM g5_sms_log LIKE '{$field}'");
+        if($field_exists) {
+            $sql .= ", {$field} = '".sql_real_escape_string($value)."'";
+        }
+    }
+    
+    if($data['send_datetime']) {
+        $field_exists = sql_fetch("SHOW COLUMNS FROM g5_sms_log LIKE 'sl_send_datetime'");
+        if($field_exists) {
+            $sql .= ", sl_send_datetime = '".sql_real_escape_string($data['send_datetime'])."'";
+        }
+    }
+    
     sql_query($sql);
 }
 
@@ -291,6 +402,12 @@ function save_auth_code($data) {
             sa_verified = 0,
             sa_datetime = '".sql_real_escape_string($current_time)."',
             sa_expire_datetime = '".sql_real_escape_string($expire_time)."'";
+    
+    // 상세 필드 추가 (필드가 있는 경우)
+    $field_exists = sql_fetch("SHOW COLUMNS FROM g5_sms_auth LIKE 'sa_user_agent'");
+    if($field_exists) {
+        $sql .= ", sa_user_agent = '".sql_real_escape_string($_SERVER['HTTP_USER_AGENT'])."'";
+    }
     
     return sql_query($sql);
 }
@@ -344,8 +461,15 @@ function verify_auth_code($phone, $code, $type) {
     // 인증번호 확인
     if($auth['sa_auth_code'] === $code) {
         $sql = "UPDATE g5_sms_auth SET 
-                sa_verified = 1 
-                WHERE sa_id = '".sql_real_escape_string($auth['sa_id'])."'";
+                sa_verified = 1";
+        
+        // 인증 완료 시간 필드가 있는 경우
+        $field_exists = sql_fetch("SHOW COLUMNS FROM g5_sms_auth LIKE 'sa_verified_datetime'");
+        if($field_exists) {
+            $sql .= ", sa_verified_datetime = '".sql_real_escape_string($current_time)."'";
+        }
+        
+        $sql .= " WHERE sa_id = '".sql_real_escape_string($auth['sa_id'])."'";
         sql_query($sql);
         
         $result['verified'] = true;
@@ -386,7 +510,7 @@ function is_verified_phone($phone, $type) {
 }
 
 /**
- * SMS 발송 함수
+ * SMS 발송 함수 (상세 로그 포함)
  * 
  * @param string $phone 수신번호
  * @param string $message 메시지
@@ -400,6 +524,29 @@ function send_sms($phone, $message, $type = 'etc') {
         'success' => false,
         'message' => ''
     );
+    
+    // 발송 시작 시간
+    $start_time = microtime(true);
+    
+    // 블랙리스트 확인
+    if(is_blacklisted_phone($phone)) {
+        // 차단 번호 발송 시도 로그
+        insert_sms_log(array(
+            'type' => $type,
+            'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+            'phone' => $phone,
+            'send_number' => $g5_sms_config['cf_phone'],
+            'message' => $message,
+            'result' => 'fail',
+            'error_code' => 'BLOCKED',
+            'api_response' => json_encode(array('message' => '블랙리스트 차단')),
+            'ip' => $_SERVER['REMOTE_ADDR']
+        ));
+        
+        $result['message'] = '차단된 전화번호입니다.';
+        $result['code'] = 'BLOCKED';
+        return $result;
+    }
     
     // SMS 서비스별 발송 처리
     if($g5_sms_config['cf_service'] == 'icode') {
@@ -431,14 +578,60 @@ function send_sms($phone, $message, $type = 'etc') {
             $sms5->Add2($strDest, $send_hp, '', '', $message, '', 1);
             $sms5->Send();
             
+            // 발송 종료 시간
+            $end_time = microtime(true);
+            $duration = round(($end_time - $start_time) * 1000); // 밀리초
+            
             if(count($sms5->Result) > 0) {
                 $res = $sms5->Result[0];
                 if(strpos($res, 'Error') === false) {
                     $result['success'] = true;
                     $result['message'] = '발송 성공';
+                    
+                    // 성공 로그
+                    insert_sms_log(array(
+                        'type' => $type,
+                        'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                        'phone' => $phone,
+                        'send_number' => $send_hp,
+                        'message' => $message,
+                        'result' => 'success',
+                        'error_code' => '',
+                        'api_response' => json_encode(array(
+                            'Result' => $sms5->Result,
+                            'duration_ms' => $duration
+                        )),
+                        'send_datetime' => date('Y-m-d H:i:s'),
+                        'retry_count' => 0,
+                        'cost' => calculate_sms_cost(),
+                        'ip' => $_SERVER['REMOTE_ADDR']
+                    ));
                 } else {
                     $result['success'] = false;
                     $result['message'] = '발송 실패: ' . $res;
+                    
+                    $error_code = '';
+                    if(strpos($res, 'Error') !== false) {
+                        $error_code = substr($res, 6, 2);
+                    }
+                    
+                    // 실패 로그
+                    insert_sms_log(array(
+                        'type' => $type,
+                        'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                        'phone' => $phone,
+                        'send_number' => $send_hp,
+                        'message' => $message,
+                        'result' => 'fail',
+                        'error_code' => $error_code,
+                        'api_response' => json_encode(array(
+                            'Result' => $sms5->Result,
+                            'error' => $res,
+                            'duration_ms' => $duration
+                        )),
+                        'retry_count' => 0,
+                        'ip' => $_SERVER['REMOTE_ADDR']
+                    ));
                 }
             } else {
                 $result['success'] = false;
@@ -520,6 +713,10 @@ function send_sms($phone, $message, $type = 'etc') {
                 // Send 실행
                 $SMS->Send();
                 
+                // 발송 종료 시간
+                $end_time = microtime(true);
+                $duration = round(($end_time - $start_time) * 1000); // 밀리초
+                
                 // 결과 확인
                 $debug_log .= "Result: " . print_r($SMS->Result, true) . "\n";
                 $debug_log .= "success_cnt: " . (isset($SMS->success_cnt) ? $SMS->success_cnt : '0') . "\n";
@@ -528,23 +725,99 @@ function send_sms($phone, $message, $type = 'etc') {
                 
                 @file_put_contents(G5_DATA_PATH.'/sms_debug.log', $debug_log, FILE_APPEND);
                 
+                // API 응답 구성
+                $api_response = array(
+                    'Result' => $SMS->Result,
+                    'success_cnt' => isset($SMS->success_cnt) ? $SMS->success_cnt : 0,
+                    'fail_cnt' => isset($SMS->fail_cnt) ? $SMS->fail_cnt : 0,
+                    'duration_ms' => $duration
+                );
+                
                 // 성공 판단
                 if(isset($SMS->Result) && is_array($SMS->Result)) {
                     foreach($SMS->Result as $key => $res) {
                         if(strpos($res, 'Error') === false) {
                             $result['success'] = true;
                             $result['message'] = '발송 성공';
+                            
+                            // 성공 로그
+                            insert_sms_log(array(
+                                'type' => $type,
+                                'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                                'phone' => $phone,
+                                'send_number' => $send_number_formatted,
+                                'message' => $message,
+                                'result' => 'success',
+                                'error_code' => '',
+                                'api_response' => json_encode($api_response),
+                                'send_datetime' => date('Y-m-d H:i:s'),
+                                'retry_count' => 0,
+                                'cost' => calculate_sms_cost(),
+                                'ip' => $_SERVER['REMOTE_ADDR']
+                            ));
                             break;
+                        } else {
+                            // 에러 처리
+                            $error_code = substr($res, 6, 2);
+                            $error_msg = get_sms_error_message($error_code);
+                            
+                            $result['success'] = false;
+                            $result['message'] = $error_msg;
+                            $result['code'] = $error_code;
+                            
+                            // 실패 로그
+                            insert_sms_log(array(
+                                'type' => $type,
+                                'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                                'phone' => $phone,
+                                'send_number' => $send_number_formatted,
+                                'message' => $message,
+                                'result' => 'fail',
+                                'error_code' => $error_code,
+                                'api_response' => json_encode($api_response),
+                                'retry_count' => 0,
+                                'ip' => $_SERVER['REMOTE_ADDR']
+                            ));
                         }
                     }
                 } else {
                     $result['success'] = true;
                     $result['message'] = '발송 성공';
+                    
+                    // 성공 로그
+                    insert_sms_log(array(
+                        'type' => $type,
+                        'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                        'phone' => $phone,
+                        'send_number' => $send_number_formatted,
+                        'message' => $message,
+                        'result' => 'success',
+                        'error_code' => '',
+                        'api_response' => json_encode($api_response),
+                        'send_datetime' => date('Y-m-d H:i:s'),
+                        'retry_count' => 0,
+                        'cost' => calculate_sms_cost(),
+                        'ip' => $_SERVER['REMOTE_ADDR']
+                    ));
                 }
                 
             } catch(Exception $e) {
                 $result['success'] = false;
                 $result['message'] = '발송 실패: ' . $e->getMessage();
+                
+                // 예외 로그
+                insert_sms_log(array(
+                    'type' => $type,
+                    'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                    'phone' => $phone,
+                    'send_number' => $send_number_formatted,
+                    'message' => $message,
+                    'result' => 'fail',
+                    'error_code' => 'EXCEPTION',
+                    'api_response' => json_encode(array('error' => $e->getMessage())),
+                    'retry_count' => 0,
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ));
             }
             
             $sms_send_result = true;
@@ -559,23 +832,57 @@ function send_sms($phone, $message, $type = 'etc') {
         if(file_exists(G5_PATH.'/plugin/sms/aligo.php')) {
             include_once(G5_PATH.'/plugin/sms/aligo.php');
             $sms = new aligo_sms($g5_sms_config['cf_aligo_key'], $g5_sms_config['cf_aligo_userid']);
-            $result = $sms->send($g5_sms_config['cf_phone'], $phone, $message);
+            $aligo_result = $sms->send($g5_sms_config['cf_phone'], $phone, $message);
+            
+            // 발송 종료 시간
+            $end_time = microtime(true);
+            $duration = round(($end_time - $start_time) * 1000); // 밀리초
+            
+            if($aligo_result['success']) {
+                $result = $aligo_result;
+                
+                // 성공 로그
+                insert_sms_log(array(
+                    'type' => $type,
+                    'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                    'phone' => $phone,
+                    'send_number' => $g5_sms_config['cf_phone'],
+                    'message' => $message,
+                    'result' => 'success',
+                    'error_code' => '',
+                    'api_response' => json_encode(array_merge($aligo_result, array('duration_ms' => $duration))),
+                    'send_datetime' => date('Y-m-d H:i:s'),
+                    'retry_count' => 0,
+                    'cost' => calculate_sms_cost(),
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ));
+            } else {
+                $result = $aligo_result;
+                
+                // 실패 로그
+                insert_sms_log(array(
+                    'type' => $type,
+                    'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
+                    'phone' => $phone,
+                    'send_number' => $g5_sms_config['cf_phone'],
+                    'message' => $message,
+                    'result' => 'fail',
+                    'error_code' => 'ALIGO_FAIL',
+                    'api_response' => json_encode(array_merge($aligo_result, array('duration_ms' => $duration))),
+                    'retry_count' => 0,
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ));
+            }
         } else {
             $result['message'] = '알리고 API 파일이 없습니다.';
             return $result;
         }
     }
     
-    // 발송 로그 기록
-    $log_data = array(
-        'type' => $type,
-        'mb_id' => isset($member['mb_id']) ? $member['mb_id'] : '',
-        'phone' => $phone,
-        'message' => $message,
-        'result' => $result['success'] ? 'success' : 'fail',
-        'ip' => $_SERVER['REMOTE_ADDR']
-    );
-    insert_sms_log($log_data);
+    // 성공시 발송 제한 업데이트
+    if($result['success']) {
+        update_sms_limit($phone, $_SERVER['REMOTE_ADDR']);
+    }
     
     return $result;
 }
@@ -660,6 +967,40 @@ function get_sms_balance() {
     return $balance_info;
 }
 
+/**
+ * SMS 비용 계산
+ */
+function calculate_sms_cost() {
+    global $g5_sms_config;
+    
+    if(isset($g5_sms_config['cf_cost_type']) && $g5_sms_config['cf_cost_type'] == 'monthly') {
+        return 0; // 정액제는 건당 비용 0
+    } else if(isset($g5_sms_config['cf_cost_per_sms'])) {
+        return $g5_sms_config['cf_cost_per_sms'];
+    }
+    
+    return 0;
+}
+
+/**
+ * SMS 에러 코드 메시지 반환
+ */
+function get_sms_error_message($code) {
+    $messages = array(
+        '02' => '형식이 잘못되어 전송이 실패하였습니다.',
+        '23' => '데이터를 다시 확인해 주시기바랍니다.',
+        '97' => '잔여코인이 부족합니다.',
+        '98' => '사용기간이 만료되었습니다.',
+        '99' => '인증 받지 못하였습니다. 계정을 다시 확인해 주세요.',
+        'BLOCKED' => '차단된 번호입니다.',
+        'DAILY_LIMIT' => '일일 발송 제한을 초과했습니다.',
+        'HOURLY_LIMIT' => '시간당 발송 제한을 초과했습니다.',
+        'TEMP_BLOCKED' => '일시적으로 차단되었습니다.',
+    );
+    
+    return isset($messages[$code]) ? $messages[$code] : '알 수 없는 오류로 전송이 실패하였습니다.';
+}
+
 // 디버깅용 (임시)
 if(!function_exists('sms_config_debug')) {
     function sms_config_debug() {
@@ -671,4 +1012,5 @@ if(!function_exists('sms_config_debug')) {
         echo "-->\n";
     }
 }
+
 ?>

@@ -71,7 +71,7 @@ include_once('./admin.head.php');
     display: inline-block;
     padding: 10px 30px;
     background: #333;
-    color: #fff;
+    color: #fff !important;
     text-decoration: none;
     border-radius: 3px;
     margin: 0 5px;
@@ -81,9 +81,21 @@ include_once('./admin.head.php');
 }
 .btn.btn-primary {
     background: #007bff;
+	color:#fff;
 }
 .btn.btn-primary:hover {
     background: #0056b3;
+}
+.update-notice {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 20px 0;
+}
+.update-notice h4 {
+    margin-top: 0;
 }
 </style>
 
@@ -97,6 +109,7 @@ include_once('./admin.head.php');
 if($_GET['step'] == 'install') {
     $errors = array();
     $success = array();
+    $updates = array();
     
     echo '<div class="install-step">';
     echo '<h3>설치 진행 중...</h3>';
@@ -145,19 +158,29 @@ if($_GET['step'] == 'install') {
         $errors[] = 'SMS 설정 테이블';
     }
     
-    // SMS 발송 로그 테이블
+    // SMS 발송 로그 테이블 (상세 필드 추가)
     $sql = "CREATE TABLE IF NOT EXISTS `g5_sms_log` (
         `sl_id` int(11) NOT NULL AUTO_INCREMENT,
         `sl_type` varchar(20) DEFAULT NULL COMMENT '발송 타입(register/password)',
         `mb_id` varchar(20) DEFAULT NULL COMMENT '회원아이디',
         `sl_phone` varchar(20) DEFAULT NULL COMMENT '수신번호',
+        `sl_send_number` varchar(20) DEFAULT NULL COMMENT '발신번호',
         `sl_message` text COMMENT '메시지 내용',
         `sl_result` varchar(10) DEFAULT NULL COMMENT '발송결과(success/fail)',
+        `sl_error_code` varchar(10) DEFAULT NULL COMMENT '에러코드',
+        `sl_api_response` text COMMENT 'API 응답 전체',
+        `sl_retry_count` int(11) DEFAULT '0' COMMENT '재시도 횟수',
         `sl_ip` varchar(50) DEFAULT NULL COMMENT 'IP주소',
         `sl_datetime` datetime NOT NULL COMMENT '발송일시',
+        `sl_send_datetime` datetime DEFAULT NULL COMMENT '실제발송일시',
+        `sl_carrier` varchar(20) DEFAULT NULL COMMENT '통신사',
+        `sl_cost` decimal(10,2) DEFAULT '0.00' COMMENT '발송비용',
         PRIMARY KEY (`sl_id`),
         KEY `idx_phone` (`sl_phone`),
-        KEY `idx_datetime` (`sl_datetime`)
+        KEY `idx_datetime` (`sl_datetime`),
+        KEY `idx_type` (`sl_type`),
+        KEY `idx_result` (`sl_result`),
+        KEY `idx_mb_id` (`mb_id`)
     ) ENGINE=MyISAM DEFAULT CHARSET=utf8";
     
     if(sql_query($sql, false)) {
@@ -178,8 +201,12 @@ if($_GET['step'] == 'install') {
         `sa_verified` tinyint(4) DEFAULT 0 COMMENT '인증 완료 여부',
         `sa_datetime` datetime NOT NULL COMMENT '생성일시',
         `sa_expire_datetime` datetime NOT NULL COMMENT '만료일시',
+        `sa_verified_datetime` datetime DEFAULT NULL COMMENT '인증완료일시',
+        `sa_user_agent` text COMMENT '사용자 에이전트',
         PRIMARY KEY (`sa_id`),
-        KEY `idx_phone_code` (`sa_phone`, `sa_auth_code`)
+        KEY `idx_phone_code` (`sa_phone`, `sa_auth_code`),
+        KEY `idx_datetime` (`sa_datetime`),
+        KEY `idx_expire` (`sa_expire_datetime`)
     ) ENGINE=MyISAM DEFAULT CHARSET=utf8";
     
     if(sql_query($sql, false)) {
@@ -195,6 +222,7 @@ if($_GET['step'] == 'install') {
         `sb_phone` varchar(20) DEFAULT NULL COMMENT '차단 전화번호',
         `sb_reason` varchar(255) DEFAULT NULL COMMENT '차단 사유',
         `sb_datetime` datetime NOT NULL COMMENT '차단일시',
+        `sb_admin_id` varchar(20) DEFAULT NULL COMMENT '처리 관리자',
         PRIMARY KEY (`sb_id`),
         KEY `idx_phone` (`sb_phone`)
     ) ENGINE=MyISAM DEFAULT CHARSET=utf8";
@@ -215,8 +243,11 @@ if($_GET['step'] == 'install') {
         `sl_last_send` datetime DEFAULT NULL COMMENT '마지막 발송 시간',
         `sl_ip` varchar(50) DEFAULT NULL COMMENT 'IP주소',
         `sl_ip_count` int(11) DEFAULT 0 COMMENT 'IP 발송 횟수',
+        `sl_block_until` datetime DEFAULT NULL COMMENT '차단 해제 시간',
+        `sl_block_reason` varchar(100) DEFAULT NULL COMMENT '차단 사유',
         PRIMARY KEY (`sl_phone`, `sl_date`),
-        KEY `idx_ip_date` (`sl_ip`, `sl_date`)
+        KEY `idx_ip_date` (`sl_ip`, `sl_date`),
+        KEY `idx_block` (`sl_block_until`)
     ) ENGINE=MyISAM DEFAULT CHARSET=utf8";
     
     if(sql_query($sql, false)) {
@@ -227,11 +258,138 @@ if($_GET['step'] == 'install') {
     }
     
     // ===================================
-    // 2. 기존 테이블 업데이트 (cf_use_sms 필드 추가)
+    // 2. 기존 테이블 업데이트
     // ===================================
     echo '<h4>2. 테이블 구조 업데이트</h4>';
     
-    // cf_use_sms 필드가 없으면 추가
+    // 기존 테이블 필드 추가 (신규 추가 부분)
+    $update_queries = array(
+        // g5_sms_log 테이블 업데이트
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_send_number',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_send_number` varchar(20) DEFAULT NULL COMMENT '발신번호' AFTER `sl_phone`"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_error_code',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_error_code` varchar(10) DEFAULT NULL COMMENT '에러코드' AFTER `sl_result`"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_api_response',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_api_response` text COMMENT 'API 응답 전체' AFTER `sl_error_code`"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_retry_count',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_retry_count` int(11) DEFAULT '0' COMMENT '재시도 횟수' AFTER `sl_api_response`"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_send_datetime',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_send_datetime` datetime DEFAULT NULL COMMENT '실제발송일시' AFTER `sl_datetime`"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_carrier',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_carrier` varchar(20) DEFAULT NULL COMMENT '통신사' AFTER `sl_send_datetime`"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'field' => 'sl_cost',
+            'query' => "ALTER TABLE g5_sms_log ADD `sl_cost` decimal(10,2) DEFAULT '0.00' COMMENT '발송비용' AFTER `sl_carrier`"
+        ),
+        // g5_sms_auth 테이블 업데이트
+        array(
+            'table' => 'g5_sms_auth',
+            'field' => 'sa_verified_datetime',
+            'query' => "ALTER TABLE g5_sms_auth ADD `sa_verified_datetime` datetime DEFAULT NULL COMMENT '인증완료일시' AFTER `sa_expire_datetime`"
+        ),
+        array(
+            'table' => 'g5_sms_auth',
+            'field' => 'sa_user_agent',
+            'query' => "ALTER TABLE g5_sms_auth ADD `sa_user_agent` text COMMENT '사용자 에이전트' AFTER `sa_verified_datetime`"
+        ),
+        // g5_sms_blacklist 테이블 업데이트
+        array(
+            'table' => 'g5_sms_blacklist',
+            'field' => 'sb_admin_id',
+            'query' => "ALTER TABLE g5_sms_blacklist ADD `sb_admin_id` varchar(20) DEFAULT NULL COMMENT '처리 관리자' AFTER `sb_datetime`"
+        ),
+        // g5_sms_limit 테이블 업데이트
+        array(
+            'table' => 'g5_sms_limit',
+            'field' => 'sl_block_until',
+            'query' => "ALTER TABLE g5_sms_limit ADD `sl_block_until` datetime DEFAULT NULL COMMENT '차단 해제 시간' AFTER `sl_ip_count`"
+        ),
+        array(
+            'table' => 'g5_sms_limit',
+            'field' => 'sl_block_reason',
+            'query' => "ALTER TABLE g5_sms_limit ADD `sl_block_reason` varchar(100) DEFAULT NULL COMMENT '차단 사유' AFTER `sl_block_until`"
+        )
+    );
+    
+    foreach($update_queries as $update) {
+        $sql = "SHOW COLUMNS FROM {$update['table']} LIKE '{$update['field']}'";
+        $result = sql_query($sql, false);
+        if(!sql_num_rows($result)) {
+            if(sql_query($update['query'], false)) {
+                echo '<div class="result success">✓ ' . $update['table'] . '.' . $update['field'] . ' 필드 추가 완료</div>';
+                $updates[] = $update['table'] . '.' . $update['field'];
+            } else {
+                echo '<div class="result error">✗ ' . $update['table'] . '.' . $update['field'] . ' 필드 추가 실패</div>';
+            }
+        } else {
+            echo '<div class="result info">ⓘ ' . $update['table'] . '.' . $update['field'] . ' 필드가 이미 존재합니다</div>';
+        }
+    }
+    
+    // 인덱스 추가
+    $index_queries = array(
+        array(
+            'table' => 'g5_sms_log',
+            'index' => 'idx_type',
+            'query' => "ALTER TABLE g5_sms_log ADD INDEX `idx_type` (`sl_type`)"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'index' => 'idx_result',
+            'query' => "ALTER TABLE g5_sms_log ADD INDEX `idx_result` (`sl_result`)"
+        ),
+        array(
+            'table' => 'g5_sms_log',
+            'index' => 'idx_mb_id',
+            'query' => "ALTER TABLE g5_sms_log ADD INDEX `idx_mb_id` (`mb_id`)"
+        ),
+        array(
+            'table' => 'g5_sms_auth',
+            'index' => 'idx_datetime',
+            'query' => "ALTER TABLE g5_sms_auth ADD INDEX `idx_datetime` (`sa_datetime`)"
+        ),
+        array(
+            'table' => 'g5_sms_auth',
+            'index' => 'idx_expire',
+            'query' => "ALTER TABLE g5_sms_auth ADD INDEX `idx_expire` (`sa_expire_datetime`)"
+        ),
+        array(
+            'table' => 'g5_sms_limit',
+            'index' => 'idx_block',
+            'query' => "ALTER TABLE g5_sms_limit ADD INDEX `idx_block` (`sl_block_until`)"
+        )
+    );
+    
+    foreach($index_queries as $index) {
+        $sql = "SHOW INDEX FROM {$index['table']} WHERE Key_name = '{$index['index']}'";
+        $result = sql_query($sql, false);
+        if(!sql_num_rows($result)) {
+            if(sql_query($index['query'], false)) {
+                echo '<div class="result success">✓ ' . $index['table'] . '.' . $index['index'] . ' 인덱스 추가 완료</div>';
+            }
+        }
+    }
+    
+    // cf_use_sms 필드가 없으면 추가 (기존 코드)
     $sql = "SHOW COLUMNS FROM g5_sms_config LIKE 'cf_use_sms'";
     $result = sql_query($sql, false);
     if(!sql_num_rows($result)) {
@@ -256,22 +414,30 @@ if($_GET['step'] == 'install') {
         '/plugin/sms/aligo.php' => '알리고 API (선택)',
         '/bbs/sms_send.php' => 'SMS 발송 처리',
         '/bbs/sms_verify.php' => 'SMS 인증 처리',
-        '/bbs/password_lost_sms.php' => '비밀번호 찾기 SMS',
-        '/bbs/password_lost_verify.php' => '비밀번호 찾기 인증',
         '/adm/sms_config.php' => '관리자 설정',
         '/adm/sms_config_update.php' => '설정 저장',
         '/adm/sms_log.php' => '발송 로그',
-        '/adm/sms_blacklist.php' => '차단번호 관리'
+        '/adm/sms_blacklist.php' => '차단번호 관리',
+        '/adm/sms_log_export.php' => '로그 내보내기 (신규)',
+        '/adm/sms_log_stats.php' => '발송 통계 (신규)'
     );
     
     $file_errors = array();
     foreach($required_files as $file => $desc) {
         $optional = strpos($desc, '(선택)') !== false;
+        $new_file = strpos($desc, '(신규)') !== false;
+        
         if(file_exists(G5_PATH.$file)) {
-            echo '<div class="result success">✓ ' . $desc . ' (' . $file . ')</div>';
+            if($new_file) {
+                echo '<div class="result success">✓ ' . $desc . ' (' . $file . ') - <strong>신규 파일</strong></div>';
+            } else {
+                echo '<div class="result success">✓ ' . $desc . ' (' . $file . ')</div>';
+            }
         } else {
             if($optional) {
                 echo '<div class="result info">ⓘ ' . $desc . ' (' . $file . ') - 선택 파일</div>';
+            } else if($new_file) {
+                echo '<div class="result info">ⓘ ' . $desc . ' (' . $file . ') - 신규 파일 (선택)</div>';
             } else {
                 echo '<div class="result error">✗ ' . $desc . ' (' . $file . ') - 파일이 없습니다</div>';
                 $file_errors[] = $file;
@@ -312,6 +478,18 @@ if($_GET['step'] == 'install') {
     if(count($errors) == 0 && count($file_errors) == 0) {
         echo '<div class="result success" style="font-size: 16px; font-weight: bold;">✓ SMS 인증 시스템 설치가 완료되었습니다!</div>';
         echo '<div class="result info">이제 관리자 페이지에서 SMS 설정을 진행해주세요.</div>';
+        
+        if(count($updates) > 0) {
+            echo '<div class="update-notice">';
+            echo '<h4>새로 추가된 기능:</h4>';
+            echo '<ul>';
+            echo '<li>상세 로그 수집 (API 응답, 에러코드, 재시도 등)</li>';
+            echo '<li>발송 통계 및 분석 기능</li>';
+            echo '<li>로그 Excel 내보내기</li>';
+            echo '<li>차단 시간 설정 기능</li>';
+            echo '</ul>';
+            echo '</div>';
+        }
     } else {
         echo '<div class="result error" style="font-size: 16px; font-weight: bold;">✗ 설치 중 일부 오류가 발생했습니다.</div>';
         if(count($errors) > 0) {
@@ -327,6 +505,7 @@ if($_GET['step'] == 'install') {
     echo '<div class="btn-area">';
     if(count($errors) == 0) {
         echo '<a href="'.G5_ADMIN_URL.'/sms_config.php" class="btn btn-primary">SMS 설정하기</a>';
+        echo '<a href="'.G5_ADMIN_URL.'/sms_log.php" class="btn">발송 로그</a>';
     } else {
         echo '<a href="'.$_SERVER['PHP_SELF'].'" class="btn">다시 확인</a>';
     }
@@ -351,6 +530,8 @@ if($_GET['step'] == 'install') {
             <li>데이터베이스 테이블 5개 생성</li>
             <li>관리자 메뉴 추가</li>
             <li>SMS 인증 기능 활성화</li>
+            <li class="text-primary"><strong>[신규] 상세 로그 수집 기능</strong></li>
+            <li class="text-primary"><strong>[신규] 발송 통계 분석</strong></li>
         </ul>
     </div>
     

@@ -1,8 +1,11 @@
 <?php
-// =================================== 
-// ajax.sms_verify.php 수정 버전
-// 비밀번호 찾기 + 회원가입 통합
-// =================================== 
+/*
+ * 파일명: ajax.sms_verify.php
+ * 위치: /bbs/ajax.sms_verify.php
+ * 기능: SMS 인증번호 확인 처리 (Ajax)
+ * 작성일: 2025-01-27
+ * 수정일: 2025-01-27 (인증 시도 횟수 제한 수정)
+ */
 
 include_once('./_common.php');
 
@@ -46,8 +49,6 @@ if(!$mb_hp || !$auth_code) {
 if($type === 'register') {
     // 회원가입 인증 처리
     $sess_mb_hp = get_session('ss_register_mb_hp');
-    $sess_auth_code = get_session('ss_register_auth_code');
-    $sess_time = get_session('ss_register_time');
     
     if(!$sess_mb_hp || $mb_hp !== $sess_mb_hp) {
         $response['error'] = '잘못된 접근입니다.';
@@ -55,31 +56,59 @@ if($type === 'register') {
         exit;
     }
     
-    // 시간 초과 확인 (3분)
-    if(time() - $sess_time > 180) {
-        $response['error'] = '인증시간이 초과되었습니다.';
-        echo json_encode($response);
-        exit;
-    }
-    
-    // 인증번호 확인
-    if($auth_code == $sess_auth_code) {
-        $response['verified'] = true;
+    // DB 기반 인증 확인 (verify_auth_code 함수 사용)
+    if(function_exists('verify_auth_code')) {
+        $verify_result = verify_auth_code($mb_hp, $auth_code, 'register');
         
-        // 인증 완료 세션
-        set_session('ss_hp_certified', $mb_hp);
-        set_session('ss_hp_certified_time', time());
-        
-        // 사용한 인증 정보 삭제
-        set_session('ss_register_mb_hp', '');
-        set_session('ss_register_auth_code', '');
-        set_session('ss_register_time', '');
+        if($verify_result['verified']) {
+            // 인증 성공
+            $response['verified'] = true;
+            $response['message'] = '인증이 완료되었습니다.';
+            
+            // 인증 완료 세션
+            set_session('ss_hp_certified', $mb_hp);
+            set_session('ss_hp_certified_time', time());
+            
+            // 사용한 인증 정보 삭제
+            set_session('ss_register_mb_hp', '');
+            set_session('ss_register_auth_code', '');
+            set_session('ss_register_time', '');
+        } else {
+            // 인증 실패
+            $response['error'] = $verify_result['message'];
+        }
     } else {
-        $response['error'] = '인증번호가 일치하지 않습니다.';
+        // verify_auth_code 함수가 없는 경우 (기존 세션 방식)
+        $sess_auth_code = get_session('ss_register_auth_code');
+        $sess_time = get_session('ss_register_time');
+        
+        // 시간 초과 확인 (3분)
+        if(time() - $sess_time > 180) {
+            $response['error'] = '인증시간이 초과되었습니다.';
+            echo json_encode($response);
+            exit;
+        }
+        
+        // 인증번호 확인
+        if($auth_code == $sess_auth_code) {
+            $response['verified'] = true;
+            $response['message'] = '인증이 완료되었습니다.';
+            
+            // 인증 완료 세션
+            set_session('ss_hp_certified', $mb_hp);
+            set_session('ss_hp_certified_time', time());
+            
+            // 사용한 인증 정보 삭제
+            set_session('ss_register_mb_hp', '');
+            set_session('ss_register_auth_code', '');
+            set_session('ss_register_time', '');
+        } else {
+            $response['error'] = '인증번호가 일치하지 않습니다.';
+        }
     }
     
 } else {
-    // 비밀번호 찾기 처리 (기존 로직)
+    // 비밀번호 찾기 처리
     $sess_mb_hp = get_session('ss_password_mb_hp');
     $sess_mb_id = get_session('ss_password_mb_id');
     
@@ -114,6 +143,7 @@ if($type === 'register') {
                 $response['verified'] = true;
                 $response['mb_id'] = $mb['mb_id'];
                 $response['token'] = $token;
+                $response['message'] = '인증이 완료되었습니다.';
             } else {
                 $response['error'] = '회원 정보를 찾을 수 없습니다.';
             }

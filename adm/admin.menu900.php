@@ -24,6 +24,7 @@ if(defined('G5_SMS5_PATH') && is_dir(G5_SMS5_PATH)) {
         array('900910', '-', '', ''),  // 구분선
         array('900920', 'SMS 인증설정', G5_ADMIN_URL.'/sms_config.php', 'sms_auth_config'),
         array('900930', 'SMS 발송로그', G5_ADMIN_URL.'/sms_log.php', 'sms_auth_log'),
+        array('900950', 'SMS 발송통계', G5_ADMIN_URL.'/sms_log_stats.php', 'sms_log_stats'),
         array('900940', 'SMS 차단번호', G5_ADMIN_URL.'/sms_blacklist.php', 'sms_auth_blacklist')
     );
 } else {
@@ -32,6 +33,7 @@ if(defined('G5_SMS5_PATH') && is_dir(G5_SMS5_PATH)) {
         array('900000', 'SMS 관리', G5_ADMIN_URL.'/sms_config.php', 'sms_auth'),
         array('900100', 'SMS 인증설정', G5_ADMIN_URL.'/sms_config.php', 'sms_auth_config'),
         array('900200', 'SMS 발송로그', G5_ADMIN_URL.'/sms_log.php', 'sms_auth_log'),
+        array('900400', 'SMS 발송통계', G5_ADMIN_URL.'/sms_log_stats.php', 'sms_log_stats'),
         array('900300', 'SMS 차단번호', G5_ADMIN_URL.'/sms_blacklist.php', 'sms_auth_blacklist')
     );
 }
