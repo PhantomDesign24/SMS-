@@ -4,7 +4,7 @@
  * 위치: /adm/sms_log.php
  * 기능: SMS 발송 로그 관리 (상세 버전)
  * 작성일: 2024-12-28
- * 수정일: 2024-12-28
+ * 수정일: 2024-12-29 (jQuery UI 추가 및 스타일 개선)
  */
 
 $sub_menu = "900930";
@@ -26,6 +26,25 @@ if(!sql_num_rows($result)) {
 }
 
 $g5['title'] = 'SMS 발송 로그';
+
+// ===================================
+// 삭제 처리
+// ===================================
+if (isset($_POST['act_button']) && $_POST['act_button'] == "선택삭제") {
+    check_admin_token();
+    
+    if (!count($_POST['chk'])) {
+        alert("삭제하실 항목을 하나 이상 선택하세요.");
+    }
+    
+    for ($i=0; $i<count($_POST['chk']); $i++) {
+        $sl_id = (int) $_POST['chk'][$i];
+        sql_query("DELETE FROM {$g5['sms_log_table']} WHERE sl_id = '$sl_id'");
+    }
+    
+    goto_url('./sms_log.php?'.$qstr);
+}
+
 include_once('./admin.head.php');
 
 // ===================================
@@ -98,6 +117,11 @@ $result = sql_query($sql);
 $colspan = 11;
 ?>
 
+<!-- jQuery UI CSS -->
+<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+<!-- jQuery UI JS (jQuery가 이미 로드된 후에) -->
+<script src="//code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
 <style>
 /* SMS 로그 전용 스타일 */
 .sms_log_stats { margin: 20px 0; }
@@ -150,6 +174,26 @@ $colspan = 11;
     padding: 5px;
     margin-top: 5px;
     font-size: 11px;
+}
+
+/* Canvas 요소에 대한 max-height 설정 */
+canvas {
+    max-height: 400px !important;
+    width: auto !important;
+}
+
+/* 모달이나 팝업 내의 canvas는 더 작게 */
+.modal canvas,
+.popup canvas {
+    max-height: 300px !important;
+}
+
+/* Datepicker 스타일 커스터마이징 */
+.ui-datepicker {
+    font-size: 14px;
+}
+.ui-datepicker td {
+    font-size: 13px;
 }
 </style>
 
@@ -204,10 +248,10 @@ $colspan = 11;
     </td>
     <th scope="row">기간검색</th>
     <td>
-        <input type="text" name="fr_date" value="<?php echo $fr_date ?>" id="fr_date" class="frm_input" size="11" maxlength="10">
+        <input type="text" name="fr_date" value="<?php echo $fr_date ?>" id="fr_date" class="frm_input" size="11" maxlength="10" readonly>
         <label for="fr_date" class="sound_only">시작일</label>
         ~
-        <input type="text" name="to_date" value="<?php echo $to_date ?>" id="to_date" class="frm_input" size="11" maxlength="10">
+        <input type="text" name="to_date" value="<?php echo $to_date ?>" id="to_date" class="frm_input" size="11" maxlength="10" readonly>
         <label for="to_date" class="sound_only">종료일</label>
     </td>
 </tr>
@@ -228,11 +272,23 @@ $colspan = 11;
     </div>
 </div>
 
+<form name="floglist" id="floglist" action="./sms_log.php" onsubmit="return floglist_submit(this);" method="post">
+<input type="hidden" name="sst" value="<?php echo $sst ?>">
+<input type="hidden" name="sod" value="<?php echo $sod ?>">
+<input type="hidden" name="sfl" value="<?php echo $sfl ?>">
+<input type="hidden" name="stx" value="<?php echo $stx ?>">
+<input type="hidden" name="page" value="<?php echo $page ?>">
+<input type="hidden" name="token" value="">
+
 <div class="tbl_head01 tbl_wrap">
     <table>
     <caption><?php echo $g5['title']; ?> 목록</caption>
     <thead>
     <tr>
+        <th scope="col">
+            <label for="chkall" class="sound_only">전체</label>
+            <input type="checkbox" name="chkall" value="1" id="chkall" onclick="check_all(this.form)">
+        </th>
         <th scope="col">번호</th>
         <th scope="col">발송일시</th>
         <th scope="col">타입</th>
@@ -241,8 +297,6 @@ $colspan = 11;
         <th scope="col">발신번호</th>
         <th scope="col">메시지</th>
         <th scope="col">결과</th>
-        <th scope="col">API응답</th>
-        <th scope="col">재시도</th>
         <th scope="col">IP</th>
     </tr>
     </thead>
@@ -303,11 +357,14 @@ $colspan = 11;
         $bg_class = ($i % 2) ? 'bg1' : 'bg0';
     ?>
     <tr class="<?php echo $bg_class; ?>">
+        <td class="td_chk">
+            <input type="checkbox" name="chk[]" value="<?php echo $row['sl_id'] ?>" id="chk_<?php echo $i ?>">
+        </td>
         <td class="td_num"><?php echo $num; ?></td>
         <td class="td_datetime"><?php echo substr($row['sl_datetime'], 0, 16); ?></td>
         <td class="td_category <?php echo $type_class; ?>"><?php echo $type_text; ?></td>
         <td class="td_id">
-            <?php if($row['mb_id']) { ?>
+            <?php if($row['mb_id'] && $row['mb_id'] != '비회원') { ?>
                 <a href="<?php echo G5_ADMIN_URL; ?>/member_form.php?w=u&mb_id=<?php echo $row['mb_id']; ?>"><?php echo $row['mb_id']; ?></a>
             <?php } else { ?>
                 <span style="color:#999;">비회원</span>
@@ -328,18 +385,6 @@ $colspan = 11;
             </div>
             <?php } ?>
         </td>
-        <td class="td_left">
-            <?php if($error_code || $error_msg || $api_response) { ?>
-            <div class="api_response">
-                <?php if($error_code) echo "코드: {$error_code}<br>"; ?>
-                <?php if($error_msg) echo "메시지: {$error_msg}<br>"; ?>
-                <?php if($api_response) echo htmlspecialchars(substr($api_response, 0, 100)); ?>
-            </div>
-            <?php } else { ?>
-                -
-            <?php } ?>
-        </td>
-        <td class="td_num"><?php echo $row['sl_retry_count'] > 0 ? $row['sl_retry_count'].'회' : '0회'; ?></td>
         <td class="td_left"><?php echo $row['sl_ip']; ?></td>
     </tr>
     <?php
@@ -352,12 +397,54 @@ $colspan = 11;
     </table>
 </div>
 
+<div class="btn_fixed_top">
+    <input type="submit" name="act_button" value="선택삭제" onclick="document.pressed=this.value" class="btn btn_02">
+</div>
+
+</form>
+
 <?php echo get_paging(G5_IS_MOBILE ? $config['cf_mobile_pages'] : $config['cf_write_pages'], $page, $total_page, '?'.$qstr.'&amp;page='); ?>
 
 <script>
 $(function(){
-    $("#fr_date, #to_date").datepicker({ changeMonth: true, changeYear: true, dateFormat: "yy-mm-dd", showButtonPanel: true, yearRange: "c-99:c+99", maxDate: "+0d" });
+    // jQuery UI Datepicker 한국어 설정
+    $.datepicker.setDefaults({
+        dateFormat: 'yy-mm-dd',
+        prevText: '이전 달',
+        nextText: '다음 달',
+        monthNames: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+        monthNamesShort: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+        dayNames: ['일','월','화','수','목','금','토'],
+        dayNamesShort: ['일','월','화','수','목','금','토'],
+        dayNamesMin: ['일','월','화','수','목','금','토'],
+        showMonthAfterYear: true,
+        yearSuffix: '년'
+    });
+    
+    $("#fr_date, #to_date").datepicker({ 
+        changeMonth: true, 
+        changeYear: true, 
+        dateFormat: "yy-mm-dd", 
+        showButtonPanel: true, 
+        yearRange: "c-99:c+99", 
+        maxDate: "+0d" 
+    });
 });
+
+function floglist_submit(f) {
+    if (!is_checked("chk[]")) {
+        alert(document.pressed+" 하실 항목을 하나 이상 선택하세요.");
+        return false;
+    }
+
+    if(document.pressed == "선택삭제") {
+        if(!confirm("선택한 자료를 정말 삭제하시겠습니까?")) {
+            return false;
+        }
+    }
+
+    return true;
+}
 </script>
 
 <?php

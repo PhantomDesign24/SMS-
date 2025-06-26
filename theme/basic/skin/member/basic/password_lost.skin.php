@@ -19,170 +19,6 @@ if($config['cf_cert_use'] && ($config['cf_cert_simple'] || $config['cf_cert_ipin
     <script src="<?php echo G5_JS_URL ?>/certify.js?v=<?php echo G5_JS_VER; ?>"></script>    
 <?php } ?>
 
-<!-- 회원정보 찾기 시작 { -->
-<div id="find_info" class="new_win">
-    <h1><?php echo $g5['title'] ?></h1>
-    
-    <div class="find_method_tabs">
-        <ul>
-            <li class="active"><a href="#find_email">이메일로 찾기</a></li>
-            <?php if($use_sms) { ?>
-            <li><a href="#find_sms">SMS 인증으로 찾기</a></li>
-            <?php } ?>
-            <?php if($config['cf_cert_use'] && $config['cf_cert_find']) { ?>
-            <li><a href="#find_cert">본인인증으로 찾기</a></li>
-            <?php } ?>
-        </ul>
-    </div>
-
-    <!-- 이메일로 찾기 -->
-    <div id="find_email" class="find_method active">
-        <form name="fpasswordlost" action="<?php echo $action_url ?>" onsubmit="return fpasswordlost_submit(this);" method="post" autocomplete="off">
-        <input type="hidden" name="cert_no" value="">
-        <fieldset>
-            <p class="info_text">
-                회원가입 시 등록하신 이메일 주소를 입력해 주세요.<br>
-                해당 이메일로 아이디와 비밀번호 재설정 링크를 보내드립니다.
-            </p>
-            
-            <div class="frm_input_wrap">
-                <label for="mb_email" class="sound_only">E-mail 주소<strong>필수</strong></label>
-                <input type="text" name="mb_email" id="mb_email" required class="required frm_input email full_input" size="30" placeholder="E-mail 주소">
-            </div>
-            
-            <?php echo captcha_html(); ?>
-            
-            <button type="submit" class="btn_submit full">인증메일 발송</button>
-        </fieldset>
-        </form>
-    </div>
-
-    <?php if($use_sms) { ?>
-    <!-- SMS 인증으로 찾기 -->
-    <div id="find_sms" class="find_method">
-        <!-- STEP 1: 휴대폰 번호 입력 -->
-        <div id="sms_step1" class="sms_step active">
-            <form name="fsmspasswordlost" id="fsmspasswordlost" method="post">
-            <fieldset>
-                <p class="info_text">
-                    회원가입 시 등록하신 휴대폰 번호를 입력해 주세요.<br>
-                    SMS 인증 후 비밀번호를 재설정할 수 있습니다.
-                </p>
-                
-                <div class="frm_input_wrap">
-                    <label for="mb_hp" class="sound_only">휴대폰번호<strong>필수</strong></label>
-                    <input type="tel" name="mb_hp" id="mb_hp" required class="required frm_input full_input" placeholder="휴대폰번호 (- 없이 입력)" maxlength="11">
-                </div>
-                
-                <button type="button" id="btn_send_sms" class="btn_submit full">인증번호 발송</button>
-            </fieldset>
-            </form>
-        </div>
-        
-        <!-- STEP 2: 인증번호 입력 -->
-        <div id="sms_step2" class="sms_step">
-            <form name="fsmsverify" id="fsmsverify" method="post">
-            <input type="hidden" name="mb_hp_verify" id="mb_hp_verify" value="">
-            <fieldset>
-                <div class="verify_info">
-                    <p class="phone_info">
-                        <strong id="phone_display"></strong>로<br>
-                        인증번호를 발송했습니다.
-                    </p>
-                    <p class="time_info">
-                        인증번호 유효시간: <span id="timer" class="timer_text"></span>
-                    </p>
-                </div>
-                
-                <div class="frm_input_wrap">
-                    <label for="auth_code" class="sound_only">인증번호</label>
-                    <input type="text" name="auth_code" id="auth_code" required class="required frm_input full_input" placeholder="인증번호 6자리" maxlength="6">
-                </div>
-                
-                <button type="button" id="btn_verify_sms" class="btn_submit full">인증 확인</button>
-                
-                <div class="verify_help">
-                    <button type="button" id="btn_resend_sms" class="btn_text">인증번호 재발송</button>
-                    <button type="button" id="btn_change_phone" class="btn_text">휴대폰 번호 변경</button>
-                </div>
-            </fieldset>
-            </form>
-        </div>
-        
-        <!-- STEP 3: 비밀번호 재설정 -->
-        <div id="sms_step3" class="sms_step">
-            <form name="fpasswordreset" id="fpasswordreset" method="post">
-            <input type="hidden" name="mb_id" id="reset_mb_id" value="">
-            <input type="hidden" name="reset_token" id="reset_token" value="">
-            <fieldset>
-                <p class="info_text">
-                    회원님의 아이디: <strong id="user_mb_id"></strong><br>
-                    새로운 비밀번호를 입력해주세요.
-                </p>
-                
-                <div class="frm_input_wrap">
-                    <label for="mb_password_new" class="sound_only">새 비밀번호<strong>필수</strong></label>
-                    <input type="password" name="mb_password" id="mb_password_new" required class="required frm_input full_input" placeholder="새 비밀번호">
-                </div>
-                
-                <div class="frm_input_wrap">
-                    <label for="mb_password_re" class="sound_only">새 비밀번호 확인<strong>필수</strong></label>
-                    <input type="password" name="mb_password_re" id="mb_password_re" required class="required frm_input full_input" placeholder="새 비밀번호 확인">
-                </div>
-                
-                <button type="button" id="btn_reset_password" class="btn_submit full">비밀번호 변경</button>
-            </fieldset>
-            </form>
-        </div>
-    </div>
-    <?php } ?>
-
-    <?php if($config['cf_cert_use'] && $config['cf_cert_find']) { ?>
-    <!-- 본인인증으로 찾기 -->
-    <div id="find_cert" class="find_method">
-        <div class="cert_info">
-            <p class="info_text">
-                본인인증을 통해 아이디 찾기와 비밀번호 재설정이 가능합니다.<br>
-                본인인증 시 제공되는 정보는 해당 인증기관에서 직접 수집하며,<br>
-                인증 이외의 용도로 이용 또는 저장하지 않습니다.
-            </p>
-            
-            <div class="cert_btn_list">
-                <?php if($config['cf_cert_simple']) { ?>
-                <button type="button" id="win_sa_kakao_cert" class="btn_cert">
-                    <span class="cert_icon kakao"></span>
-                    카카오 간편인증
-                </button>
-                <?php } ?>
-                
-                <?php if($config['cf_cert_hp']) { ?>
-                <button type="button" id="win_hp_cert" class="btn_cert">
-                    <span class="cert_icon phone"></span>
-                    휴대폰 본인인증
-                </button>
-                <?php } ?>
-                
-                <?php if($config['cf_cert_ipin']) { ?>
-                <button type="button" id="win_ipin_cert" class="btn_cert">
-                    <span class="cert_icon ipin"></span>
-                    아이핀 본인인증
-                </button>
-                <?php } ?>
-            </div>
-        </div>
-    </div>
-    <?php } ?>
-    
-    <div class="win_btn">
-        <a href="<?php echo G5_URL ?>" class="btn_close">홈으로</a>
-    </div>
-</div>
-
-<!-- 로딩 오버레이 -->
-<div id="loading_overlay" style="display:none;">
-    <div class="loading_spinner"></div>
-</div>
-
 <style>
 /* 회원정보 찾기 스타일 */
 #find_info {
@@ -466,6 +302,170 @@ if($config['cf_cert_use'] && ($config['cf_cert_simple'] || $config['cf_cert_ipin
     border: 1px solid #f5c6cb;
 }
 </style>
+<!-- 회원정보 찾기 시작 { -->
+<div id="find_info" class="new_win">
+    <h1><?php echo $g5['title'] ?></h1>
+    
+    <div class="find_method_tabs">
+        <ul>
+            <li class="active"><a href="#find_email">이메일로 찾기</a></li>
+            <?php if($use_sms) { ?>
+            <li><a href="#find_sms">SMS 인증으로 찾기</a></li>
+            <?php } ?>
+            <?php if($config['cf_cert_use'] && $config['cf_cert_find']) { ?>
+            <li><a href="#find_cert">본인인증으로 찾기</a></li>
+            <?php } ?>
+        </ul>
+    </div>
+
+    <!-- 이메일로 찾기 -->
+    <div id="find_email" class="find_method active">
+        <form name="fpasswordlost" action="<?php echo $action_url ?>" onsubmit="return fpasswordlost_submit(this);" method="post" autocomplete="off">
+        <input type="hidden" name="cert_no" value="">
+        <fieldset>
+            <p class="info_text">
+                회원가입 시 등록하신 이메일 주소를 입력해 주세요.<br>
+                해당 이메일로 아이디와 비밀번호 재설정 링크를 보내드립니다.
+            </p>
+            
+            <div class="frm_input_wrap">
+                <label for="mb_email" class="sound_only">E-mail 주소<strong>필수</strong></label>
+                <input type="text" name="mb_email" id="mb_email" required class="required frm_input email full_input" size="30" placeholder="E-mail 주소">
+            </div>
+            
+            <?php echo captcha_html(); ?>
+            
+            <button type="submit" class="btn_submit full">인증메일 발송</button>
+        </fieldset>
+        </form>
+    </div>
+
+    <?php if($use_sms) { ?>
+    <!-- SMS 인증으로 찾기 -->
+    <div id="find_sms" class="find_method">
+        <!-- STEP 1: 휴대폰 번호 입력 -->
+        <div id="sms_step1" class="sms_step active">
+            <form name="fsmspasswordlost" id="fsmspasswordlost" method="post">
+            <fieldset>
+                <p class="info_text">
+                    회원가입 시 등록하신 휴대폰 번호를 입력해 주세요.<br>
+                    SMS 인증 후 비밀번호를 재설정할 수 있습니다.
+                </p>
+                
+                <div class="frm_input_wrap">
+                    <label for="mb_hp" class="sound_only">휴대폰번호<strong>필수</strong></label>
+                    <input type="tel" name="mb_hp" id="mb_hp" required class="required frm_input full_input" placeholder="휴대폰번호 (- 없이 입력)" maxlength="11">
+                </div>
+                
+                <button type="button" id="btn_send_sms" class="btn_submit full">인증번호 발송</button>
+            </fieldset>
+            </form>
+        </div>
+        
+        <!-- STEP 2: 인증번호 입력 -->
+        <div id="sms_step2" class="sms_step">
+            <form name="fsmsverify" id="fsmsverify" method="post">
+            <input type="hidden" name="mb_hp_verify" id="mb_hp_verify" value="">
+            <fieldset>
+                <div class="verify_info">
+                    <p class="phone_info">
+                        <strong id="phone_display"></strong>로<br>
+                        인증번호를 발송했습니다.
+                    </p>
+                    <p class="time_info">
+                        인증번호 유효시간: <span id="timer" class="timer_text"></span>
+                    </p>
+                </div>
+                
+                <div class="frm_input_wrap">
+                    <label for="auth_code" class="sound_only">인증번호</label>
+                    <input type="text" name="auth_code" id="auth_code" required class="required frm_input full_input" placeholder="인증번호 6자리" maxlength="6">
+                </div>
+                
+                <button type="button" id="btn_verify_sms" class="btn_submit full">인증 확인</button>
+                
+                <div class="verify_help">
+                    <button type="button" id="btn_resend_sms" class="btn_text">인증번호 재발송</button>
+                    <button type="button" id="btn_change_phone" class="btn_text">휴대폰 번호 변경</button>
+                </div>
+            </fieldset>
+            </form>
+        </div>
+        
+        <!-- STEP 3: 비밀번호 재설정 -->
+        <div id="sms_step3" class="sms_step">
+            <form name="fpasswordreset" id="fpasswordreset" method="post">
+            <input type="hidden" name="mb_id" id="reset_mb_id" value="">
+            <input type="hidden" name="reset_token" id="reset_token" value="">
+            <fieldset>
+                <p class="info_text">
+                    회원님의 아이디: <strong id="user_mb_id"></strong><br>
+                    새로운 비밀번호를 입력해주세요.
+                </p>
+                
+                <div class="frm_input_wrap">
+                    <label for="mb_password_new" class="sound_only">새 비밀번호<strong>필수</strong></label>
+                    <input type="password" name="mb_password" id="mb_password_new" required class="required frm_input full_input" placeholder="새 비밀번호">
+                </div>
+                
+                <div class="frm_input_wrap">
+                    <label for="mb_password_re" class="sound_only">새 비밀번호 확인<strong>필수</strong></label>
+                    <input type="password" name="mb_password_re" id="mb_password_re" required class="required frm_input full_input" placeholder="새 비밀번호 확인">
+                </div>
+                
+                <button type="button" id="btn_reset_password" class="btn_submit full">비밀번호 변경</button>
+            </fieldset>
+            </form>
+        </div>
+    </div>
+    <?php } ?>
+
+    <?php if($config['cf_cert_use'] && $config['cf_cert_find']) { ?>
+    <!-- 본인인증으로 찾기 -->
+    <div id="find_cert" class="find_method">
+        <div class="cert_info">
+            <p class="info_text">
+                본인인증을 통해 아이디 찾기와 비밀번호 재설정이 가능합니다.<br>
+                본인인증 시 제공되는 정보는 해당 인증기관에서 직접 수집하며,<br>
+                인증 이외의 용도로 이용 또는 저장하지 않습니다.
+            </p>
+            
+            <div class="cert_btn_list">
+                <?php if($config['cf_cert_simple']) { ?>
+                <button type="button" id="win_sa_kakao_cert" class="btn_cert">
+                    <span class="cert_icon kakao"></span>
+                    카카오 간편인증
+                </button>
+                <?php } ?>
+                
+                <?php if($config['cf_cert_hp']) { ?>
+                <button type="button" id="win_hp_cert" class="btn_cert">
+                    <span class="cert_icon phone"></span>
+                    휴대폰 본인인증
+                </button>
+                <?php } ?>
+                
+                <?php if($config['cf_cert_ipin']) { ?>
+                <button type="button" id="win_ipin_cert" class="btn_cert">
+                    <span class="cert_icon ipin"></span>
+                    아이핀 본인인증
+                </button>
+                <?php } ?>
+            </div>
+        </div>
+    </div>
+    <?php } ?>
+    
+    <div class="win_btn">
+        <a href="<?php echo G5_URL ?>" class="btn_close">홈으로</a>
+    </div>
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="loading_overlay" style="display:none;">
+    <div class="loading_spinner"></div>
+</div>
+
 
 <script>
 var g5_bbs_url = "<?php echo G5_BBS_URL ?>";

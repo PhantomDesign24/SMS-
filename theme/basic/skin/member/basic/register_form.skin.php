@@ -456,44 +456,59 @@ if ($config['cf_cert_use'] && ($config['cf_cert_simple'] || $config['cf_cert_ipi
 	            <?php }  ?>
 				
 				<!-- 휴대폰번호 with SMS 인증 -->
-	            <?php if ($config['cf_use_hp'] || ($config["cf_cert_use"] && ($config['cf_cert_hp'] || $config['cf_cert_simple']))) {  ?>
-	            <li>
-	                <label for="reg_mb_hp">휴대폰번호<?php if (!empty($hp_required)) { ?><span class="required_star">*</span><?php } ?><?php echo $desc_phone ?></label>
-	                
-	                <div class="phone_cert_wrap">
-	                    <div class="register_input_group" style="flex: 1; margin-bottom: 0;">
-	                        <i class="fas fa-mobile-alt input_icon"></i>
-	                        <input type="text" name="mb_hp" value="<?php echo get_text($member['mb_hp']) ?>" id="reg_mb_hp" <?php echo $hp_required; ?> <?php echo $hp_readonly; ?> class="frm_input full_input <?php echo $hp_required; ?> <?php echo $hp_readonly; ?>" maxlength="20" placeholder="휴대폰번호를 입력하세요">
-	                    </div>
-	                    <?php if ($w == '' && !$hp_readonly) { // 회원가입시에만 SMS 인증 표시 ?>
-	                    <button type="button" id="btn_send_sms" class="btn_phone_cert">인증번호 발송</button>
-	                    <?php } ?>
-	                </div>
-	                
-	                <?php if ($w == '' && !$hp_readonly) { // 인증번호 입력 영역 ?>
-	                <div id="cert_number_wrap" class="cert_number_wrap">
-	                    <div class="phone_cert_wrap">
-	                        <div class="register_input_group" style="flex: 1; margin-bottom: 0;">
-	                            <i class="fas fa-key input_icon"></i>
-	                            <input type="text" name="cert_number" id="cert_number" class="frm_input full_input" maxlength="6" placeholder="인증번호 6자리를 입력하세요">
-	                        </div>
-	                        <button type="button" id="btn_cert_confirm" class="btn_phone_cert">인증확인</button>
-	                        <span id="cert_timer" class="cert_timer"></span>
-	                    </div>
-	                    <div id="cert_msg" style="margin-top: 10px; font-size: 13px;"></div>
-	                </div>
-	                
-	                <div id="sms_verified_msg" class="sms_verified_msg">
-	                    <i class="fas fa-check-circle"></i> 휴대폰 인증이 완료되었습니다.
-	                </div>
-	                <?php } ?>
-	                
-	                <?php if ($config['cf_cert_use'] && ($config['cf_cert_hp'] || $config['cf_cert_simple'])) { ?>
-	                <input type="hidden" name="old_mb_hp" value="<?php echo get_text($member['mb_hp']) ?>">
-	                <?php } ?>
-	            </li>
-	            <?php }  ?>
-	
+				<?php if ($config['cf_use_hp'] || ($config["cf_cert_use"] && ($config['cf_cert_hp'] || $config['cf_cert_simple']))) {  ?>
+				<li>
+					<label for="reg_mb_hp">휴대폰번호<?php if (!empty($hp_required)) { ?><span class="required_star">*</span><?php } ?><?php echo $desc_phone ?></label>
+					
+					<div class="phone_cert_wrap">
+						<div class="register_input_group" style="flex: 1; margin-bottom: 0;">
+							<i class="fas fa-mobile-alt input_icon"></i>
+							<input type="text" name="mb_hp" value="<?php echo get_text($member['mb_hp']) ?>" id="reg_mb_hp" <?php echo $hp_required; ?> <?php echo $hp_readonly; ?> class="frm_input full_input <?php echo $hp_required; ?> <?php echo $hp_readonly; ?>" maxlength="20" placeholder="휴대폰번호를 입력하세요">
+						</div>
+						<?php 
+						// SMS 인증 설정 확인 후 버튼 표시
+						if ($w == '' && !$hp_readonly && function_exists('get_sms_config')) { 
+							$sms_config = get_sms_config();
+							if($sms_config && isset($sms_config['cf_use_register']) && $sms_config['cf_use_register']) {
+						?>
+						<button type="button" id="btn_send_sms" class="btn_phone_cert">인증번호 발송</button>
+						<?php 
+							}
+						} 
+						?>
+					</div>
+					
+					<?php 
+					// 인증번호 입력 영역도 같은 조건 적용
+					if ($w == '' && !$hp_readonly && function_exists('get_sms_config')) { 
+						$sms_config = get_sms_config();
+						if($sms_config && isset($sms_config['cf_use_register']) && $sms_config['cf_use_register']) {
+					?>
+					<div id="cert_number_wrap" class="cert_number_wrap">
+						<div class="phone_cert_wrap">
+							<div class="register_input_group" style="flex: 1; margin-bottom: 0;">
+								<i class="fas fa-key input_icon"></i>
+								<input type="text" name="cert_number" id="cert_number" class="frm_input full_input" maxlength="6" placeholder="인증번호 6자리를 입력하세요">
+							</div>
+							<button type="button" id="btn_cert_confirm" class="btn_phone_cert">인증확인</button>
+							<span id="cert_timer" class="cert_timer"></span>
+						</div>
+						<div id="cert_msg" style="margin-top: 10px; font-size: 13px;"></div>
+					</div>
+					
+					<div id="sms_verified_msg" class="sms_verified_msg">
+						<i class="fas fa-check-circle"></i> 휴대폰 인증이 완료되었습니다.
+					</div>
+					<?php 
+						}
+					} 
+					?>
+					
+					<?php if ($config['cf_cert_use'] && ($config['cf_cert_hp'] || $config['cf_cert_simple'])) { ?>
+					<input type="hidden" name="old_mb_hp" value="<?php echo get_text($member['mb_hp']) ?>">
+					<?php } ?>
+				</li>
+				<?php }  ?>
 	            <!-- 주소 -->
 	            <?php if ($config['cf_use_addr']) { ?>
 	            <li>

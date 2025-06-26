@@ -4,9 +4,10 @@
  * 위치: /adm/sms_log_stats.php
  * 기능: SMS 발송 통계
  * 작성일: 2024-12-28
+ * 수정일: 2024-12-29 (jQuery UI 및 Canvas 스타일 추가)
  */
 
-$sub_menu = "900931";
+$sub_menu = "900940";
 include_once('./_common.php');
 
 if ($is_admin != 'super')
@@ -23,35 +24,6 @@ $g5['sms_log_table'] = G5_TABLE_PREFIX.'sms_log';
 if (!$fr_date) $fr_date = date("Y-m-d", strtotime("-30 days"));
 if (!$to_date) $to_date = date("Y-m-d");
 
-// ===================================
-// 비용 계산 로직 (통계 조회 후)
-// ===================================
-$sms_config = sql_fetch("SELECT * FROM g5_sms_config");
-$total_cost = 0;
-$cost_display = '';
-
-if($sms_config) {
-    if(isset($sms_config['cf_cost_type']) && $sms_config['cf_cost_type'] == 'monthly') {
-        // 정액제
-        $cost_display = '정액제 사용중<br>월 ₩' . number_format($sms_config['cf_monthly_cost']);
-    } else {
-        // 건당 과금
-        if(isset($sms_config['cf_cost_per_sms']) && $sms_config['cf_cost_per_sms'] > 0) {
-            $total_cost = $total_stat['success_cnt'] * $sms_config['cf_cost_per_sms'];
-            $cost_display = '₩' . number_format($total_cost) . '<br><small>(@₩' . number_format($sms_config['cf_cost_per_sms']) . '/건)</small>';
-        } else {
-            // 잔액에서 계산
-            if(isset($sms_config['cf_remaining_sms']) && $sms_config['cf_remaining_sms'] > 0 && $total_stat['success_cnt'] > 0) {
-                // 대략적인 건당 비용 계산 (예시)
-                $cost_display = '잔액: ' . number_format($sms_config['cf_remaining_sms']) . '건';
-            } else {
-                $cost_display = '비용 정보 없음';
-            }
-        }
-    }
-} else {
-    $cost_display = '설정 필요';
-}
 
 // ===================================
 // 전체 통계
@@ -140,6 +112,11 @@ while ($row = sql_fetch_array($hourly_result)) {
 }
 ?>
 
+<!-- jQuery UI CSS -->
+<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+<!-- jQuery UI JS -->
+<script src="//code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
 <style>
 /* 통계 페이지 스타일 */
 .stat_container { margin: 20px 0; }
@@ -186,6 +163,12 @@ while ($row = sql_fetch_array($hourly_result)) {
     border-bottom: 1px solid #eee;
 }
 
+/* Canvas 요소에 대한 max-height 설정 */
+canvas {
+    max-height: 400px !important;
+    width: auto !important;
+}
+
 .table_container { 
     background: #fff; 
     border: 1px solid #ddd;
@@ -206,15 +189,23 @@ while ($row = sql_fetch_array($hourly_result)) {
     border-radius: 5px;
     margin-bottom: 20px;
 }
+
+/* Datepicker 스타일 커스터마이징 */
+.ui-datepicker {
+    font-size: 14px;
+}
+.ui-datepicker td {
+    font-size: 13px;
+}
 </style>
 
 <!-- 검색 폼 -->
 <form class="search_form" method="get">
     <label>기간 선택</label>
-    <input type="text" name="fr_date" value="<?php echo $fr_date ?>" id="fr_date" class="frm_input" size="11" maxlength="10">
+    <input type="text" name="fr_date" value="<?php echo $fr_date ?>" id="fr_date" class="frm_input" size="11" maxlength="10" readonly>
     ~
-    <input type="text" name="to_date" value="<?php echo $to_date ?>" id="to_date" class="frm_input" size="11" maxlength="10">
-    <input type="submit" value="조회" class="btn_submit">
+    <input type="text" name="to_date" value="<?php echo $to_date ?>" id="to_date" class="frm_input" size="11" maxlength="10" readonly>
+    <input type="submit" value="조회" class="btn btn_submit">
     <a href="./sms_log.php" class="btn btn_02">로그 목록</a>
     <a href="./sms_log_export.php?<?php echo http_build_query($_GET); ?>" class="btn btn_02">Excel 다운로드</a>
 </form>
@@ -236,10 +227,6 @@ while ($row = sql_fetch_array($hourly_result)) {
     <div class="stat_box">
         <h3>성공률</h3>
         <div class="value"><?php echo $success_rate; ?>%</div>
-    </div>
-    <div class="stat_box">
-        <h3>총 비용</h3>
-        <div class="value" style="font-size: 20px; line-height: 1.3;"><?php echo $cost_display; ?></div>
     </div>
 </div>
 
@@ -365,6 +352,20 @@ while ($row = sql_fetch_array($hourly_result)) {
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(function(){
+    // jQuery UI Datepicker 한국어 설정
+    $.datepicker.setDefaults({
+        dateFormat: 'yy-mm-dd',
+        prevText: '이전 달',
+        nextText: '다음 달',
+        monthNames: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+        monthNamesShort: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+        dayNames: ['일','월','화','수','목','금','토'],
+        dayNamesShort: ['일','월','화','수','목','금','토'],
+        dayNamesMin: ['일','월','화','수','목','금','토'],
+        showMonthAfterYear: true,
+        yearSuffix: '년'
+    });
+    
     // 날짜 선택기
     $("#fr_date, #to_date").datepicker({ 
         changeMonth: true, 

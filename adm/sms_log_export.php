@@ -87,7 +87,6 @@ th { background-color: #f2f2f2; }
     <th>결과</th>
     <th>에러코드</th>
     <th>API응답</th>
-    <th>재시도</th>
     <th>IP</th>
     <th>발송시간</th>
     <th>통신사</th>
@@ -138,7 +137,6 @@ while ($row = sql_fetch_array($result)) {
     <td class="<?php echo $result_class; ?>"><?php echo $result_text; ?></td>
     <td><?php echo $row['sl_error_code']; ?></td>
     <td><?php echo htmlspecialchars($api_response_text); ?></td>
-    <td><?php echo $row['sl_retry_count'] ? $row['sl_retry_count'].'회' : ''; ?></td>
     <td><?php echo $row['sl_ip']; ?></td>
     <td><?php echo $row['sl_send_datetime']; ?></td>
     <td><?php echo $row['sl_carrier']; ?></td>

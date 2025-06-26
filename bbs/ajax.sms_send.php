@@ -4,7 +4,7 @@
  * 위치: /bbs/ajax.sms_send.php
  * 기능: SMS 인증번호 발송 처리 (Ajax)
  * 작성일: 2025-01-27
- * 수정일: 2025-01-27 (발송 제한 및 보안 기능 완성)
+ * 수정일: 2025-01-27 (발송 제한 및 보안 기능 완성, 회원ID 로그 추가)
  */
 
 include_once('./_common.php');
@@ -161,6 +161,11 @@ if($type === 'password') {
 
 // SMS 발송
 if(function_exists('send_sms')) {
+    // 비밀번호 찾기인 경우 회원 ID를 전역 변수로 설정 (로그 기록용)
+    if($type === 'password' && isset($mb['mb_id'])) {
+        $GLOBALS['temp_mb_id'] = $mb['mb_id'];
+    }
+    
     $result = send_sms($mb_hp, $message, $type);
     
     if($result['success']) {
@@ -254,7 +259,10 @@ if(function_exists('send_sms')) {
     $response['timeout'] = isset($sms_config['cf_auth_timeout']) ? $sms_config['cf_auth_timeout'] : 180;
     $response['message'] = '인증번호가 발송되었습니다.';
     
-
+    // 개발 환경에서 인증번호 표시 (보안 주의!)
+    if(defined('G5_DISPLAY_SQL_ERROR') && G5_DISPLAY_SQL_ERROR) {
+        $response['debug_auth_code'] = $auth_code;
+    }
 }
 
 echo json_encode($response);

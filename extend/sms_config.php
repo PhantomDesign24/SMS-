@@ -332,7 +332,14 @@ function insert_sms_log($data) {
     if($data['type'] == 'password' && !$data['mb_id']) {
         if(isset($_SESSION['ss_password_mb_id'])) {
             $data['mb_id'] = $_SESSION['ss_password_mb_id'];
+        } else if(isset($GLOBALS['temp_mb_id'])) {
+            $data['mb_id'] = $GLOBALS['temp_mb_id'];
         }
+    }
+    
+    // mb_id가 여전히 비어있으면 '비회원'으로 설정
+    if(!$data['mb_id']) {
+        $data['mb_id'] = '비회원';
     }
     
     $sql = "INSERT INTO g5_sms_log SET
@@ -970,18 +977,64 @@ function get_sms_balance() {
 /**
  * SMS 비용 계산
  */
-function calculate_sms_cost() {
+function calculate_sms_cost($message = '') {
     global $g5_sms_config;
     
     if(isset($g5_sms_config['cf_cost_type']) && $g5_sms_config['cf_cost_type'] == 'monthly') {
         return 0; // 정액제는 건당 비용 0
     } else if(isset($g5_sms_config['cf_cost_per_sms'])) {
-        return $g5_sms_config['cf_cost_per_sms'];
+        $cost = $g5_sms_config['cf_cost_per_sms'];
+        
+        // LMS 비용 계산 (90바이트 초과)
+        if($message && strlen($message) > 90) {
+            $cost = $cost * 3; // LMS는 3배
+        }
+        
+        return $cost;
     }
     
     return 0;
 }
-
+/**
+ * SMS 발송 통계 조회
+ */
+function get_sms_statistics($type = 'daily', $days = 7) {
+    global $g5;
+    
+    $stats = array();
+    
+    if($type == 'daily') {
+        // 일별 통계
+        $sql = "SELECT 
+                    DATE(sl_datetime) as date,
+                    COUNT(*) as total,
+                    SUM(CASE WHEN sl_result = 'success' THEN 1 ELSE 0 END) as success,
+                    SUM(CASE WHEN sl_result = 'fail' THEN 1 ELSE 0 END) as fail,
+                    SUM(sl_cost) as cost
+                FROM g5_sms_log
+                WHERE sl_datetime >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
+                GROUP BY DATE(sl_datetime)
+                ORDER BY date DESC";
+    } else if($type == 'hourly') {
+        // 시간대별 통계
+        $sql = "SELECT 
+                    HOUR(sl_datetime) as hour,
+                    COUNT(*) as total,
+                    SUM(CASE WHEN sl_result = 'success' THEN 1 ELSE 0 END) as success,
+                    SUM(CASE WHEN sl_result = 'fail' THEN 1 ELSE 0 END) as fail
+                FROM g5_sms_log
+                WHERE DATE(sl_datetime) = CURDATE()
+                GROUP BY HOUR(sl_datetime)
+                ORDER BY hour";
+    }
+    
+    $result = sql_query($sql);
+    while($row = sql_fetch_array($result)) {
+        $stats[] = $row;
+    }
+    
+    return $stats;
+}
 /**
  * SMS 에러 코드 메시지 반환
  */

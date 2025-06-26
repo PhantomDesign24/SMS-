@@ -159,29 +159,28 @@ if($_GET['step'] == 'install') {
     }
     
     // SMS 발송 로그 테이블 (상세 필드 추가)
-    $sql = "CREATE TABLE IF NOT EXISTS `g5_sms_log` (
-        `sl_id` int(11) NOT NULL AUTO_INCREMENT,
-        `sl_type` varchar(20) DEFAULT NULL COMMENT '발송 타입(register/password)',
-        `mb_id` varchar(20) DEFAULT NULL COMMENT '회원아이디',
-        `sl_phone` varchar(20) DEFAULT NULL COMMENT '수신번호',
-        `sl_send_number` varchar(20) DEFAULT NULL COMMENT '발신번호',
-        `sl_message` text COMMENT '메시지 내용',
-        `sl_result` varchar(10) DEFAULT NULL COMMENT '발송결과(success/fail)',
-        `sl_error_code` varchar(10) DEFAULT NULL COMMENT '에러코드',
-        `sl_api_response` text COMMENT 'API 응답 전체',
-        `sl_retry_count` int(11) DEFAULT '0' COMMENT '재시도 횟수',
-        `sl_ip` varchar(50) DEFAULT NULL COMMENT 'IP주소',
-        `sl_datetime` datetime NOT NULL COMMENT '발송일시',
-        `sl_send_datetime` datetime DEFAULT NULL COMMENT '실제발송일시',
-        `sl_carrier` varchar(20) DEFAULT NULL COMMENT '통신사',
-        `sl_cost` decimal(10,2) DEFAULT '0.00' COMMENT '발송비용',
-        PRIMARY KEY (`sl_id`),
-        KEY `idx_phone` (`sl_phone`),
-        KEY `idx_datetime` (`sl_datetime`),
-        KEY `idx_type` (`sl_type`),
-        KEY `idx_result` (`sl_result`),
-        KEY `idx_mb_id` (`mb_id`)
-    ) ENGINE=MyISAM DEFAULT CHARSET=utf8";
+	$sql = "CREATE TABLE IF NOT EXISTS `g5_sms_log` (
+		`sl_id` int(11) NOT NULL AUTO_INCREMENT,
+		`sl_type` varchar(20) DEFAULT NULL COMMENT '발송 타입(register/password)',
+		`mb_id` varchar(20) DEFAULT NULL COMMENT '회원아이디',
+		`sl_phone` varchar(20) DEFAULT NULL COMMENT '수신번호',
+		`sl_send_number` varchar(20) DEFAULT NULL COMMENT '발신번호',
+		`sl_message` text COMMENT '메시지 내용',
+		`sl_result` varchar(10) DEFAULT NULL COMMENT '발송결과(success/fail)',
+		`sl_error_code` varchar(10) DEFAULT NULL COMMENT '에러코드',
+		`sl_api_response` text COMMENT 'API 응답 전체',
+		`sl_retry_count` int(11) DEFAULT '0' COMMENT '재시도 횟수',
+		`sl_ip` varchar(50) DEFAULT NULL COMMENT 'IP주소',
+		`sl_datetime` datetime NOT NULL COMMENT '발송일시',
+		`sl_send_datetime` datetime DEFAULT NULL COMMENT '실제발송일시',
+		`sl_carrier` varchar(20) DEFAULT NULL COMMENT '통신사',
+		PRIMARY KEY (`sl_id`),
+		KEY `idx_phone` (`sl_phone`),
+		KEY `idx_datetime` (`sl_datetime`),
+		KEY `idx_type` (`sl_type`),
+		KEY `idx_result` (`sl_result`),
+		KEY `idx_mb_id` (`mb_id`)
+	) ENGINE=MyISAM DEFAULT CHARSET=utf8";
     
     if(sql_query($sql, false)) {
         echo '<div class="result success">✓ SMS 발송 로그 테이블 생성 완료</div>';
@@ -264,12 +263,6 @@ if($_GET['step'] == 'install') {
     
     // 기존 테이블 필드 추가 (신규 추가 부분)
     $update_queries = array(
-        // g5_sms_log 테이블 업데이트
-        array(
-            'table' => 'g5_sms_log',
-            'field' => 'sl_send_number',
-            'query' => "ALTER TABLE g5_sms_log ADD `sl_send_number` varchar(20) DEFAULT NULL COMMENT '발신번호' AFTER `sl_phone`"
-        ),
         array(
             'table' => 'g5_sms_log',
             'field' => 'sl_error_code',

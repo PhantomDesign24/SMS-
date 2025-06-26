@@ -6,7 +6,7 @@
  * 작성일: 2024-12-28
  */
 
-$sub_menu = "900940";
+$sub_menu = "900950";
 include_once('./_common.php');
 
 if ($is_admin != 'super')
@@ -70,8 +70,8 @@ if($act_button == '선택삭제') {
     check_admin_token();
     
     for($i=0; $i<count($chk); $i++) {
-        $k = $chk[$i];
-        $sb_id = $sb_id_array[$k];
+        $k = $_POST['chk'][$i];
+        $sb_id = $_POST['sb_id'][$k];
         
         $sql = " delete from {$g5['sms_blacklist_table']} where sb_id = '".sql_real_escape_string($sb_id)."' ";
         sql_query($sql);
@@ -163,12 +163,12 @@ $admin_token = get_admin_token();
         $bg = 'bg'.($i%2);
     ?>
     <tr class="<?php echo $bg; ?>">
-        <td class="td_chk">
-            <input type="hidden" name="sb_id[<?php echo $i; ?>]" value="<?php echo $row['sb_id']; ?>" id="sb_id_<?php echo $i; ?>">
-            <label for="chk_<?php echo $i; ?>" class="sound_only"><?php echo format_phone_number($row['sb_phone']); ?></label>
-            <input type="checkbox" name="chk[]" value="<?php echo $i; ?>" id="chk_<?php echo $i; ?>">
-        </td>
-        <td class="td_num"><?php echo $num; ?></td>
+		<td class="td_chk">
+			<input type="hidden" name="sb_id[]" value="<?php echo $row['sb_id']; ?>" id="sb_id_<?php echo $i; ?>">
+			<label for="chk_<?php echo $i; ?>" class="sound_only"><?php echo format_phone_number($row['sb_phone']); ?></label>
+			<input type="checkbox" name="chk[]" value="<?php echo $i; ?>" id="chk_<?php echo $i; ?>">
+		</td>
+		<td class="td_num"><?php echo $num; ?></td>
         <td class="td_tel"><?php echo format_phone_number($row['sb_phone']); ?></td>
         <td class="td_left"><?php echo get_text($row['sb_reason']); ?></td>
         <td class="td_datetime"><?php echo $row['sb_datetime']; ?></td>
